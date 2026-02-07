@@ -142,32 +142,42 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     var redisConnectionString = builder.Configuration.GetConnectionString("Redis")
         ?? throw new InvalidOperationException("Redis connection string not configured");
 
-    var configuration = ConfigurationOptions.Parse(redisConnectionString);
-
-    // Important for cloud Redis
-    configuration.AbortOnConnectFail = false;
-    configuration.ConnectTimeout = 10000;
-    configuration.SyncTimeout = 5000;
-    configuration.ConnectRetry = 3;
-
-    // Enable SSL for secure cloud connections (Upstash and Redis Cloud use SSL)
-    if (redisConnectionString.StartsWith("rediss://"))
-    {
-        configuration.Ssl = true;
-        configuration.SslProtocols = System.Security.Authentication.SslProtocols.Tls12;
-    }
-
     var logger = sp.GetRequiredService<ILogger<Program>>();
 
     try
     {
-        var multiplexer = ConnectionMultiplexer.Connect(configuration);
-        logger.LogInformation("Successfully connected to Redis");
+        var config = ConfigurationOptions.Parse(redisConnectionString);
+
+        // Azure Cache for Redis optimizations
+        config.AbortOnConnectFail = false;
+        config.ConnectTimeout = 15000;
+        config.SyncTimeout = 5000;
+        config.AsyncTimeout = 5000;
+        config.ConnectRetry = 3;
+        config.AllowAdmin = true;
+
+        var multiplexer = ConnectionMultiplexer.Connect(config);
+
+        multiplexer.ConnectionFailed += (sender, args) =>
+        {
+            logger.LogError("Redis connection failed: {EndPoint} - {FailureType}",
+                args.EndPoint, args.FailureType);
+        };
+
+        multiplexer.ConnectionRestored += (sender, args) =>
+        {
+            logger.LogInformation("Redis connection restored: {EndPoint}", args.EndPoint);
+        };
+
+        var db = multiplexer.GetDatabase();
+        db.Ping();
+
+        logger.LogInformation("Successfully connected to Azure Cache for Redis");
         return multiplexer;
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Failed to connect to Redis. Starting without cache.");
+        logger.LogError(ex, "Failed to connect to Azure Cache for Redis");
         throw;
     }
 });
