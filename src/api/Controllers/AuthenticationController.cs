@@ -1,8 +1,9 @@
+using Habitera.DTOs;
+using Habitera.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using System.Security.Claims;
-using Habitera.Services;
-using Habitera.DTOs;
 
 namespace Habitera.Controllers
 {
@@ -10,13 +11,60 @@ namespace Habitera.Controllers
     [Route("api/[controller]")]
     public class AuthenticationController : ControllerBase
     {
+        private readonly IConfiguration _configuration;
         private readonly IAuthenticationService _authenticationService;
         private readonly ILogger<AuthenticationController> _logger;
 
-        public AuthenticationController(IAuthenticationService authenticationService, ILogger<AuthenticationController> logger)
+        public AuthenticationController(
+            IConfiguration configuration,
+            IAuthenticationService authenticationService, 
+            ILogger<AuthenticationController> logger)
         {
+            _configuration = configuration;
             _authenticationService = authenticationService;
             _logger = logger;
+        }
+
+        [HttpPost("MockLogin")]
+        public async Task<IActionResult> MockLogin([FromQuery] MockLoginRequestDTO dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var userTypeKey = dto.UserType.ToString();
+
+            var mockUserSection = _configuration.GetSection($"MockUsers:{userTypeKey}");
+
+            if (!mockUserSection.Exists())
+            {
+                return BadRequest($"Mock user configuration not found for user type: {dto.UserType}");
+            }
+
+            var email = mockUserSection["Email"]
+                ?? throw new InvalidOperationException($"Mock {dto.UserType} Email is not configured");
+
+            var password = mockUserSection["Password"]
+                ?? throw new InvalidOperationException($"Mock {dto.UserType} Password is not configured");
+
+            var request = new LoginRequestDTO
+            {
+                Email = email,
+                Password = password,
+                IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+                UserAgent = HttpContext.Request.Headers["User-Agent"].ToString(),
+                DeviceInfo = HttpContext.Request.Headers["User-Agent"].ToString(),
+            };
+
+            var result = await _authenticationService.LoginAsync(request);
+
+            if (result.Success)
+            {
+                return Ok(result);
+            }
+
+            return Unauthorized(result);
         }
 
         [HttpPost("Login")]

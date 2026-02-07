@@ -63,6 +63,12 @@ namespace Habitera.DTOs
         public UserType UserType { get; set; }
     }
 
+    public class MockLoginRequestDTO
+    {
+        [Required]
+        public UserType UserType { get; set; }
+    }
+
     public class LoginRequestDTO : DeviceInfoRequestDTO
     {
         [Required, EmailAddress]
