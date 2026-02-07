@@ -1,15 +1,263 @@
-using CloudinaryDotNet.Actions;
+using NetTopologySuite.Geometries;
 using Elastic.Clients.Elasticsearch;
 using Elastic.Clients.Elasticsearch.Aggregations;
 using Elastic.Clients.Elasticsearch.QueryDsl;
 using Habitera.DTOs;
 using Habitera.Models;
 using Habitera.Repositories;
+using Microsoft.EntityFrameworkCore;
 using ElasticBoundingBox = Elastic.Clients.Elasticsearch.TopLeftBottomRightGeoBounds;
 using ElasticGeoLocation = Elastic.Clients.Elasticsearch.GeoLocation;
 
 namespace Habitera.Services
 {
+
+    public class DatabaseSearchService
+    {
+        private readonly IUnitOfWork _unitOfWork;
+        private readonly ILogger<DatabaseSearchService> _logger;
+
+        public DatabaseSearchService(
+            IUnitOfWork unitOfWork,
+            ILogger<DatabaseSearchService> logger)
+        {
+            _unitOfWork = unitOfWork;
+            _logger = logger;
+        }
+
+        public async Task<PropertySearchResponse> SearchPropertiesAsync(PropertySearchRequest request)
+        {
+            var properties = await _unitOfWork.Properties.GetAllAsync();
+            var query = properties
+                .AsQueryable()
+                .Where(p => p.IsPublished && p.Status == PropertyStatus.Active);
+
+            // Text search on title and description
+            if (!string.IsNullOrWhiteSpace(request.Query))
+            {
+                var searchTerm = request.Query.ToLower();
+                query = query.Where(p =>
+                    p.Title.ToLower().Contains(searchTerm) ||
+                    p.Description.ToLower().Contains(searchTerm) ||
+                    p.City.ToLower().Contains(searchTerm)
+                );
+            }
+
+            // Location filters
+            if (!string.IsNullOrWhiteSpace(request.City))
+                query = query.Where(p => p.City == request.City);
+
+            if (!string.IsNullOrWhiteSpace(request.State))
+                query = query.Where(p => p.State == request.State);
+
+            // Price filters
+            if (request.MinPrice.HasValue)
+                query = query.Where(p => p.Price >= request.MinPrice.Value);
+
+            if (request.MaxPrice.HasValue)
+                query = query.Where(p => p.Price <= request.MaxPrice.Value);
+
+            // Bedroom filters
+            if (request.MinBedrooms.HasValue)
+                query = query.Where(p => p.Bedrooms >= request.MinBedrooms.Value);
+
+            if (request.MaxBedrooms.HasValue)
+                query = query.Where(p => p.Bedrooms <= request.MaxBedrooms.Value);
+
+            // Bathroom filters
+            if (request.MinBathrooms.HasValue)
+                query = query.Where(p => p.Bathrooms >= request.MinBathrooms.Value);
+
+            // Property type filter
+            if (request.PropertyTypes?.Any() == true)
+            {
+                var types = request.PropertyTypes
+                    .Select(t => Enum.Parse<PropertyType>(t))
+                    .ToList();
+                query = query.Where(p => types.Contains(p.PropertyType));
+            }
+
+            // Listing type filter
+            if (request.ListingTypes?.Any() == true)
+            {
+                var types = request.ListingTypes
+                    .Select(t => Enum.Parse<ListingType>(t))
+                    .ToList();
+                query = query.Where(p => types.Contains(p.ListingType));
+            }
+
+            // Geospatial search
+            if (request.GeoSearch != null)
+            {
+                if (request.GeoSearch.Latitude.HasValue &&
+                    request.GeoSearch.Longitude.HasValue &&
+                    request.GeoSearch.RadiusKm.HasValue)
+                {
+                    var radiusInMeters = request.GeoSearch.RadiusKm.Value * 1000;
+                    var searchPoint = new Point(
+                        (double)request.GeoSearch.Longitude.Value,
+                        (double)request.GeoSearch.Latitude.Value
+                    )
+                    { SRID = 4326 };
+
+                    query = query.Where(p =>
+                        p.Latitude != 0 && p.Longitude != 0
+                    );
+
+                    // Filter by approximate bounding box first (faster)
+                    var latDelta = request.GeoSearch.RadiusKm.Value / 111.0;
+                    var lonDelta = request.GeoSearch.RadiusKm.Value /
+                        (111.0 * Math.Cos(
+                            (double)request.GeoSearch.Latitude.Value * Math.PI / 180.0));
+
+                    query = query.Where(p =>
+                        p.Latitude >= (decimal)((double)request.GeoSearch.Latitude.Value - latDelta) &&
+                        p.Latitude <= (decimal)((double)request.GeoSearch.Latitude.Value + latDelta) &&
+                        p.Longitude >= (decimal)((double)request.GeoSearch.Longitude.Value - lonDelta) &&
+                        p.Longitude <= (decimal)((double)request.GeoSearch.Longitude.Value + lonDelta)
+                    );
+                }
+            }
+
+            // Get total count before pagination
+            var totalCount = query.Count();
+
+            // Sorting
+            query = request.SortBy?.ToLower() switch
+            {
+                "price" => request.SortOrder?.ToLower() == "desc"
+                    ? query.OrderByDescending(p => p.Price)
+                    : query.OrderBy(p => p.Price),
+                "newest" => query.OrderByDescending(p => p.CreatedAt),
+                "popular" => query.OrderByDescending(p => p.ViewCount),
+                _ => query.OrderByDescending(p => p.CreatedAt)
+            };
+
+            // Pagination
+            var pagedProperties = query
+                .Skip((request.PageNumber - 1) * request.PageSize)
+                .Take(request.PageSize)
+                .ToList();
+
+            // Eager load images for each property
+            foreach (var property in pagedProperties)
+            {
+                if (property.Images != null)
+                {
+                    property.Images = property.Images.OrderBy(i => i.DisplayOrder).Take(1).ToList();
+                }
+            }
+
+            var propertyDtos = pagedProperties.Select(p => MapToDTO(p)).ToList();
+
+            return new PropertySearchResponse
+            {
+                Properties = propertyDtos,
+                TotalCount = totalCount,
+                PageNumber = request.PageNumber,
+                PageSize = request.PageSize,
+                TotalPages = (int)Math.Ceiling(totalCount / (double)request.PageSize)
+            };
+        }
+
+        public async Task<List<PropertyDTO>> SearchByRadiusAsync(
+            decimal latitude,
+            decimal longitude,
+            double radiusKm)
+        {
+            // Using Haversine formula approximation
+            var properties = await _unitOfWork.Properties.GetAllAsync();
+
+            var nearby = properties
+                .Where(p => p.IsPublished && p.Status == PropertyStatus.Active)
+                .Select(p => new
+                {
+                    Property = p,
+                    Distance = CalculateDistance(latitude, longitude, p.Latitude, p.Longitude)
+                })
+                .Where(x => x.Distance <= radiusKm)
+                .OrderBy(x => x.Distance)
+                .Take(50)
+                .Select(x => MapToDTO(x.Property))
+                .ToList();
+
+            return nearby;
+        }
+
+        private double CalculateDistance(decimal lat1, decimal lon1, decimal lat2, decimal lon2)
+        {
+            const double earthRadiusKm = 6371.0;
+            var dLat = DegreesToRadians((double)(lat2 - lat1));
+            var dLon = DegreesToRadians((double)(lon2 - lon1));
+
+            var a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+                    Math.Cos(DegreesToRadians((double)lat1)) *
+                    Math.Cos(DegreesToRadians((double)lat2)) *
+                    Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
+
+            var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+            return earthRadiusKm * c;
+        }
+
+        private double DegreesToRadians(double degrees) => degrees * Math.PI / 180.0;
+
+        private PropertyDTO MapToDTO(Property property)
+        {
+            var primaryImage = property.Images?.FirstOrDefault(i => i.IsPrimary);
+            var fullAddress = string.Join(", ", new[]
+            {
+                property.Street, property.City, property.State,
+                property.PostalCode, property.Country
+            }.Where(s => !string.IsNullOrWhiteSpace(s)));
+
+            return new PropertyDTO
+            {
+                Id = property.Id,
+                AgentId = property.AgentId,
+                Title = property.Title,
+                Description = property.Description,
+                PropertyType = property.PropertyType,
+                ListingType = property.ListingType,
+                Street = property.Street,
+                City = property.City,
+                State = property.State,
+                Country = property.Country,
+                PostalCode = property.PostalCode,
+                FullAddress = fullAddress,
+                Bedrooms = property.Bedrooms,
+                Bathrooms = property.Bathrooms,
+                SquareFeet = property.SquareFeet,
+                LotSize = property.LotSize,
+                YearBuilt = property.YearBuilt,
+                Price = property.Price,
+                Currency = property.Currency,
+                Status = property.Status.ToString(),
+                IsPublished = property.IsPublished,
+                IsFeatured = property.IsFeatured,
+                ViewCount = property.ViewCount,
+                FavoriteCount = property.FavoriteCount,
+                Images = property.Images?.Select(i => new PropertyImageDTO
+                {
+                    Id = i.Id,
+                    ImageUrl = i.ImageUrl,
+                    ThumbnailUrl = i.ThumbnailUrl,
+                    DisplayOrder = i.DisplayOrder,
+                    IsPrimary = i.IsPrimary
+                }).ToList() ?? new List<PropertyImageDTO>(),
+                PrimaryImageUrl = primaryImage?.ImageUrl,
+                CreatedAt = property.CreatedAt,
+                UpdatedAt = property.UpdatedAt,
+                PublishedAt = property.PublishedAt,
+                PricePerSquareFoot = property.SquareFeet > 0
+                    ? (double)(property.Price / property.SquareFeet)
+                    : 0,
+                DaysOnMarket = property.PublishedAt.HasValue
+                    ? (DateTime.UtcNow - property.PublishedAt.Value).Days
+                    : 0
+            };
+        }
+    }
+
     public interface IElasticsearchService
     {
         Task<bool> IndexExistsAsync();
@@ -83,7 +331,6 @@ namespace Habitera.Services
 
                             .GeoPoint(t => t.Location)
 
-                            .IntegerNumber(t => t.Price)
                             .IntegerNumber(t => t.Bedrooms)
                             .IntegerNumber(t => t.ViewCount)
                             .IntegerNumber(t => t.FavoriteCount)

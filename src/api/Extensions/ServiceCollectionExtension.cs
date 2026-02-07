@@ -29,7 +29,7 @@ namespace Habitera.Extensions
             IConfiguration configuration)
         {
             var settings = configuration.GetSection("Elasticsearch").Get<ElasticsearchSettings>()
-                ?? new ElasticsearchSettings();
+                ?? throw new InvalidOperationException("Elasticsearch not configured");
 
             var clientSettings = new ElasticsearchClientSettings(new Uri(settings.Uri));
 

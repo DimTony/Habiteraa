@@ -51,8 +51,9 @@ namespace Habitera.Services
     {
         private readonly IMapper _mapper;
         private readonly IUnitOfWork _unitOfWork;
-        private readonly IElasticsearchService _elasticsearchService;
-        private readonly IPropertySyncService _syncService;
+        private readonly DatabaseSearchService _searchService;
+        //private readonly IElasticsearchService _elasticsearchService;
+        //private readonly IPropertySyncService _syncService;
         private readonly ICloudinaryService _cloudinaryService;
         private readonly IRedisCacheService _cache;
         private readonly ILogger<PropertyService> _logger;
@@ -60,16 +61,18 @@ namespace Habitera.Services
         public PropertyService(
             IMapper mapper,
             IUnitOfWork unitOfWork,
-            IElasticsearchService elasticsearchService,
-            IPropertySyncService syncService,
+            DatabaseSearchService searchService,
+            //IElasticsearchService elasticsearchService,
+            //IPropertySyncService syncService,
             ICloudinaryService cloudinaryService,
             IRedisCacheService cache,
             ILogger<PropertyService> logger)
         {
             _mapper = mapper;
             _unitOfWork = unitOfWork;
-            _elasticsearchService = elasticsearchService;
-            _syncService = syncService;
+            _searchService = searchService;
+            //_elasticsearchService = elasticsearchService;
+            //_syncService = syncService;
             _cloudinaryService = cloudinaryService;
             _cache = cache;
             _logger = logger;
@@ -173,10 +176,10 @@ namespace Habitera.Services
                 await _unitOfWork.SaveChangesAsync();
 
                 // Sync to Elasticsearch if published
-                if (property.IsPublished)
-                {
-                    await _syncService.SyncPropertyToElasticsearchAsync(propertyId);
-                }
+                //if (property.IsPublished)
+                //{
+                //    await _syncService.SyncPropertyToElasticsearchAsync(propertyId);
+                //}
 
                 var propertyDto = _mapper.Map<PropertyDTO>(property);
                 return OperationResult<PropertyDTO>.Successful(
@@ -251,7 +254,7 @@ namespace Habitera.Services
                 await _unitOfWork.SaveChangesAsync();
 
                 // Remove from Elasticsearch
-                await _elasticsearchService.DeletePropertyAsync(propertyId);
+                //await _elasticsearchService.DeletePropertyAsync(propertyId);
 
                 _logger.LogInformation("Property {PropertyId} deleted by Agent {AgentId}",
                     propertyId, agentId);
@@ -334,7 +337,7 @@ namespace Habitera.Services
                 await _unitOfWork.Properties.PublishPropertyAsync(propertyId);
 
                 // Index in Elasticsearch
-                await _elasticsearchService.IndexPropertyAsync(property);
+                //await _elasticsearchService.IndexPropertyAsync(property);
 
                 _logger.LogInformation("Property {PropertyId} published by Agent {AgentId}",
                     propertyId, agentId);
@@ -375,7 +378,7 @@ namespace Habitera.Services
                 await _unitOfWork.Properties.UnpublishPropertyAsync(propertyId);
 
                 // Remove from Elasticsearch
-                await _elasticsearchService.DeletePropertyAsync(propertyId);
+                //await _elasticsearchService.DeletePropertyAsync(propertyId);
 
                 _logger.LogInformation("Property {PropertyId} unpublished by Agent {AgentId}",
                     propertyId, agentId);
@@ -414,10 +417,10 @@ namespace Habitera.Services
                 await _unitOfWork.Properties.UpdatePropertyStatusAsync(propertyId, status);
 
                 // Update in Elasticsearch if published
-                if (property.IsPublished)
-                {
-                    await _elasticsearchService.UpdatePropertyStatusAsync(propertyId, status);
-                }
+                //if (property.IsPublished)
+                //{
+                //    await _elasticsearchService.UpdatePropertyStatusAsync(propertyId, status);
+                //}
 
                 _logger.LogInformation(
                     "Property {PropertyId} status updated to {Status} by Agent {AgentId}",
@@ -459,7 +462,7 @@ namespace Habitera.Services
                 await _unitOfWork.PropertyImages.SetPrimaryImageAsync(propertyId, imageId);
 
                 // Sync to Elasticsearch
-                await _syncService.SyncPropertyToElasticsearchAsync(propertyId);
+                //await _syncService.SyncPropertyToElasticsearchAsync(propertyId);
 
                 return OperationResult<string>.Successful(
                     "Primary image updated successfully",
@@ -493,7 +496,7 @@ namespace Habitera.Services
                     amenities);
 
                 // Sync to Elasticsearch
-                await _syncService.SyncPropertyToElasticsearchAsync(propertyId);
+                //await _syncService.SyncPropertyToElasticsearchAsync(propertyId);
 
                 var amenityDto = new PropertyAmenityDTO
                 {
@@ -602,7 +605,8 @@ namespace Habitera.Services
                     SortBy = "newest"
                 };
 
-                var results = await _elasticsearchService.SearchPropertiesAsync(searchRequest);
+                //var results = await _elasticsearchService.SearchPropertiesAsync(searchRequest);
+                var results = await _searchService.SearchPropertiesAsync(searchRequest);
 
                 return PaginatedOperationResult<PropertyDTO>.Successful(
                     results.Properties,
@@ -620,16 +624,12 @@ namespace Habitera.Services
         }
 
         public async Task<OperationResult<List<PropertyDTO>>> GetNearbyPropertiesAsync(
-            decimal latitude,
-            decimal longitude,
-            double radiusKm)
+             decimal latitude, decimal longitude, double radiusKm)
         {
             try
             {
-                var properties = await _elasticsearchService.SearchByRadiusAsync(
-                    (double)latitude,
-                    (double)longitude,
-                    radiusKm);
+                var properties = await _searchService.SearchByRadiusAsync(
+                    latitude, longitude, radiusKm);
 
                 return OperationResult<List<PropertyDTO>>.Successful(
                     properties,
@@ -653,12 +653,14 @@ namespace Habitera.Services
                 if (cached != null)
                     return cached;
 
-                var similar = await _elasticsearchService.GetSimilarPropertiesAsync(propertyId, limit);
+                return new List<PropertyDTO>();
 
-                // Cache for 1 hour
-                await _cache.SetAsync(cacheKey, similar, TimeSpan.FromHours(1));
+                //var similar = await _elasticsearchService.GetSimilarPropertiesAsync(propertyId, limit);
 
-                return similar;
+                //// Cache for 1 hour
+                //await _cache.SetAsync(cacheKey, similar, TimeSpan.FromHours(1));
+
+                //return similar;
             }
             catch (Exception ex)
             {
@@ -673,17 +675,17 @@ namespace Habitera.Services
                 var newCount = await _unitOfWork.Properties.IncrementViewCountAsync(propertyId);
 
                 // Update in Elasticsearch asynchronously
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await _syncService.SyncPropertyToElasticsearchAsync(propertyId);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to sync view count to Elasticsearch");
-                    }
-                });
+                //_ = Task.Run(async () =>
+                //{
+                //    try
+                //    {
+                //        await _syncService.SyncPropertyToElasticsearchAsync(propertyId);
+                //    }
+                //    catch (Exception ex)
+                //    {
+                //        _logger.LogError(ex, "Failed to sync view count to Elasticsearch");
+                //    }
+                //});
 
                 return OperationResult<int>.Successful(newCount);
             }
@@ -698,21 +700,13 @@ namespace Habitera.Services
         {
             try
             {
-                // Create cache key from search parameters
                 var cacheKey = $"search:{GetSearchCacheKey(request)}";
-
-                // Try cache first
                 var cached = await _cache.GetAsync<PropertySearchResponse>(cacheKey);
+
                 if (cached != null)
-                {
-                    _logger.LogInformation("Search results retrieved from cache");
                     return cached;
-                }
 
-                // Search Elasticsearch
-                var results = await _elasticsearchService.SearchPropertiesAsync(request);
-
-                // Cache for 5 minutes
+                var results = await _searchService.SearchPropertiesAsync(request);
                 await _cache.SetAsync(cacheKey, results, TimeSpan.FromMinutes(5));
 
                 return results;
@@ -740,7 +734,8 @@ namespace Habitera.Services
                 // Add date filter for last 7 days
             };
 
-            var results = await _elasticsearchService.SearchPropertiesAsync(searchRequest);
+            //var results = await _elasticsearchService.SearchPropertiesAsync(searchRequest);
+            var results = await _searchService.SearchPropertiesAsync(searchRequest);
             //var dtos = results.Properties.Select(MapToDTO).ToList();
             var dtos = results.Properties.ToList();
 
@@ -800,7 +795,7 @@ namespace Habitera.Services
                 await _unitOfWork.SaveChangesAsync();
 
                 // Sync to Elasticsearch
-                await _syncService.SyncPropertyToElasticsearchAsync(propertyId);
+                //await _syncService.SyncPropertyToElasticsearchAsync(propertyId);
 
                 var imageDto = _mapper.Map<PropertyImageDTO>(propertyImage);
                 return OperationResult<PropertyImageDTO>.Successful(
@@ -868,7 +863,7 @@ namespace Habitera.Services
                 await _unitOfWork.PropertyImages.AddRangeAsync(propertyImages);
                 await _unitOfWork.SaveChangesAsync();
 
-                await _syncService.SyncPropertyToElasticsearchAsync(propertyId);
+                //await _syncService.SyncPropertyToElasticsearchAsync(propertyId);
 
                 var imageDtos = _mapper.Map<List<PropertyImageDTO>>(propertyImages);
                 return OperationResult<List<PropertyImageDTO>>.Successful(
@@ -930,7 +925,7 @@ namespace Habitera.Services
                     }
                 }
 
-                await _syncService.SyncPropertyToElasticsearchAsync(propertyId);
+                //await _syncService.SyncPropertyToElasticsearchAsync(propertyId);
 
                 return OperationResult<string>.Successful(
                     "Image deleted successfully",
