@@ -15,20 +15,23 @@ namespace Habitera.Services
     public class SavedSearchService : ISavedSearchService
     {
         private readonly IUnitOfWork _unitOfWork;
-        private readonly IElasticsearchService _elasticsearchService;
+        private readonly DatabaseSearchService _searchService;
+        //private readonly IElasticsearchService _elasticsearchService;
         private readonly IRedisCacheService _cache;
         private readonly IEmailService _emailService;
         private readonly ILogger<SavedSearchService> _logger;
 
         public SavedSearchService(
            IUnitOfWork unitOfWork,
-           IElasticsearchService elasticsearchService,
+           DatabaseSearchService searchService,
+           //IElasticsearchService elasticsearchService,
            IRedisCacheService cache,
            IEmailService emailService,
            ILogger<SavedSearchService> logger)
         {
             _unitOfWork = unitOfWork;
-            _elasticsearchService = elasticsearchService;
+            _searchService = searchService;
+            //_elasticsearchService = elasticsearchService;
             _cache = cache;
             _emailService = emailService;
             _logger = logger;
@@ -76,7 +79,8 @@ namespace Habitera.Services
             // Add date filter to criteria
             criteria.PageSize = 100; // Get more results for alerts
 
-            var results = await _elasticsearchService.SearchPropertiesAsync(criteria);
+            //var results = await _elasticsearchService.SearchPropertiesAsync(criteria);
+            var results = await _searchService.SearchPropertiesAsync(criteria);
 
             // Filter to only new properties since last check
             var newMatches = results.Properties

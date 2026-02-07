@@ -13,18 +13,21 @@ namespace Habitera.Services
     public class RecommendationService : IRecommendationService
     {
         private readonly IRedisCacheService _cache;
-        private readonly IElasticsearchService _elasticsearchService;
+        private readonly DatabaseSearchService _searchService;
+        //private readonly IElasticsearchService _elasticsearchService;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ILogger<RecommendationService> _logger;
 
         public RecommendationService(
             IRedisCacheService cache,
-            IElasticsearchService elasticsearchService,
+            DatabaseSearchService searchService,
+            //IElasticsearchService elasticsearchService,
             IUnitOfWork unitOfWork,
             ILogger<RecommendationService> logger)
         {
             _cache = cache;
-            _elasticsearchService = elasticsearchService;
+            _searchService = searchService;
+            //_elasticsearchService = elasticsearchService;
             _unitOfWork = unitOfWork;
             _logger = logger;
         }
@@ -49,19 +52,24 @@ namespace Habitera.Services
                 if (preferences == null)
                 {
                     // New user - return trending/featured properties
-                    var trending = await _elasticsearchService.GetRecommendedPropertiesAsync(
-                        userId.ToString(),
-                        limit
-                    );
+                    //var trending = await _elasticsearchService.GetRecommendedPropertiesAsync(
+                    //    userId.ToString(),
+                    //    limit
+                    //);
+                    //var trending = await _searchService.GetRecommendedPropertiesAsync(
+                    //    userId.ToString(),
+                    //    limit
+                    //);
 
-                    // Cache for 1 hour
-                    await _cache.SetAsync(cacheKey, trending, TimeSpan.FromHours(1));
-                    return trending;
+                    //// Cache for 1 hour
+                    //await _cache.SetAsync(cacheKey, trending, TimeSpan.FromHours(1));
+                    //return trending;
                 }
 
                 // Build search based on preferences
                 var searchRequest = BuildRecommendationQuery(preferences, limit * 3); // Get more for filtering
-                var results = await _elasticsearchService.SearchPropertiesAsync(searchRequest);
+                //var results = await _elasticsearchService.SearchPropertiesAsync(searchRequest);
+                var results = await _searchService.SearchPropertiesAsync(searchRequest);
 
                 // Score and rank results
                 var scoredResults = await ScoreRecommendationsAsync(userId, results.Properties, preferences);

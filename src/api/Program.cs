@@ -190,8 +190,8 @@ builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IPropertyService, PropertyService>();
-builder.Services.AddScoped<IPropertySyncService, PropertySyncService>();
 builder.Services.AddScoped<ISavedSearchService, SavedSearchService>();
+builder.Services.AddScoped<DatabaseSearchService>();
 builder.Services.AddScoped<IRecommendationService, RecommendationService>();
 builder.Services.AddScoped<IPriceAnalyticsService, PriceAnalyticsService>();
 builder.Services.AddScoped<ICloudinaryService, CloudinaryService>();
@@ -199,7 +199,8 @@ builder.Services.AddScoped<ICloudinaryService, CloudinaryService>();
 //builder.Services.AddHostedService<PropertySyncBackgroundService>();
 //builder.Services.AddHostedService<SavedSearchAlertsBackgroundService>();
 
-builder.Services.AddElasticsearch(builder.Configuration);
+//builder.Services.AddElasticsearch(builder.Configuration);
+//builder.Services.AddScoped<IPropertySyncService, PropertySyncService>();
 
 builder.Services.AddResponseCompression(options =>
 {
