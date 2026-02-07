@@ -1,75 +1,18 @@
+using Elastic.Clients.Elasticsearch;
+using Habitera.DTOs;
 using Microsoft.AspNetCore.Identity;
+using NetTopologySuite;
+using NetTopologySuite.Geometries;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using NetTopologySuite.Geometries;
-using Elastic.Clients.Elasticsearch;
-using NetTopologySuite;
 
 namespace Habitera.Models
 {
-    public class PropertyDocument
-    {
-        public Guid Id { get; set; }
-        public Guid AgentId { get; set; }
-
-        public string Title { get; set; } = null!;
-        public string Description { get; set; } = null!;
-
-        public string PropertyType { get; set; } = null!;
-        public string ListingType { get; set; } = null!;
-
-        public string Street { get; set; } = null!;
-        public string City { get; set; } = null!;
-        public string State { get; set; } = null!;
-        public string Country { get; set; } = null!;
-        public string PostalCode { get; set; } = null!;
-        public string FullAddress { get; set; } = null!;
-
-        public GeoLocation Location { get; set; } = null!;
-
-        public int Bedrooms { get; set; } = 0;
-        public decimal Bathrooms { get; set; } = 0;
-        public decimal SquareFeet { get; set; } = 0;
-        public decimal LotSize { get; set; } = 0;
-        public int? YearBuilt { get; set; } 
-
-        public decimal Price { get; set; }
-        public string Currency { get; set; } = "NGN";
-
-        public string Status { get; set; } = null!;
-        public bool IsPublished { get; set; }
-        public bool IsFeatured { get; set; }
-
-        public int ViewCount { get; set; }
-        public int FavoriteCount { get; set; }
-
-        public List<PropertyImageDocument> Images { get; set; } = new();
-        public string? PrimaryImageUrl { get; set; }
-
-        public List<string> AmenityTags { get; set; } = new();
-        public Dictionary<string, object> AmenitiesData { get; set; } = new();
-
-        public DateTime CreatedAt { get; set; }
-        public DateTime UpdatedAt { get; set; }
-        public DateTime? PublishedAt { get; set; }
-
-        public double PricePerSquareFoot { get; set; }
-        public int DaysOnMarket { get; set; }
-    }
 
     public class GeoCoordinates
     {
         public double Lat { get; set; }
         public double Lon { get; set; }
-    }
-
-    public class PropertyImageDocument
-    {
-        public Guid Id { get; set; }
-        public string ImageUrl { get; set; } = null!;
-        public string? ThumbnailUrl { get; set; }
-        public int DisplayOrder { get; set; }
-        public bool IsPrimary { get; set; }
     }
 
     public class PropertySearchRequest
@@ -125,7 +68,7 @@ namespace Habitera.Models
 
     public class PropertySearchResponse
     {
-        public List<PropertyDocument> Properties { get; set; } = new();
+        public List<PropertyDTO> Properties { get; set; } = new();
         public long TotalCount { get; set; }
         public int PageNumber { get; set; }
         public int PageSize { get; set; }

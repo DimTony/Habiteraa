@@ -1,8 +1,10 @@
+using Elastic.Clients.Elasticsearch;
 using Microsoft.AspNetCore.Identity;
+using Habitera.DTOs;
+using NetTopologySuite.Geometries;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using NetTopologySuite.Geometries;
-using NetTopologySuite;
+
 
 namespace Habitera.Models
 {
@@ -77,6 +79,36 @@ namespace Habitera.Models
         public bool PushNotifications { get; set; } = true;
     }
 
+    public class UserPreferences
+    {
+        public PriceRange AveragePriceRange { get; set; } = new();
+        public int PreferredBedroomCount { get; set; }
+        public int PreferredBathroomCount { get; set; }
+        public List<PropertyType> PreferredPropertyTypes { get; set; } = new();
+        public List<string> PreferredCities { get; set; } = new();
+        public List<string> PreferredStates { get; set; } = new();
+        public List<string> PreferredAmenities { get; set; } = new();
+        public decimal? PreferredSquareFeet { get; set; }
+        public decimal? MaxDistanceFromWork { get; set; } // in km
+        public GeoLocation? WorkLocation { get; set; }
+        public DateTime CalculatedAt { get; set; } = DateTime.UtcNow;
+    }
+
+    public class PriceRange
+    {
+        public decimal Min { get; set; }
+        public decimal Max { get; set; }
+
+        public bool IsInRange(decimal price)
+        {
+            return price >= Min && price <= Max;
+        }
+
+        public decimal Average => (Min + Max) / 2;
+
+        public decimal Range => Max - Min;
+    }
+
     public class AgentProfile
     {
         [Key]
@@ -142,6 +174,58 @@ namespace Habitera.Models
         public string? RevokedReason { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    }
+
+    public class UserInteraction
+    {
+        public Guid Id { get; set; }
+        public Guid UserId { get; set; }
+        public Guid PropertyId { get; set; }
+        public InteractionType Type { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public int DurationSeconds { get; set; } // How long they viewed
+        public string? DeviceType { get; set; }
+        public string? Source { get; set; } // search, recommendation, etc.
+    }
+
+    public enum InteractionType
+    {
+        View = 0,
+        Favorite = 1,
+        Unfavorite = 2,
+        Share = 3,
+        ContactAgent = 4,
+        BookViewing = 5,
+        SavedSearch = 6,
+        Click = 7
+    }
+
+    public class RecommendationScore
+    {
+        public Guid PropertyId { get; set; }
+        public PropertyDTO Property { get; set; } = new();
+        public double Score { get; set; }
+        public Dictionary<string, double> FactorScores { get; set; } = new();
+        public string Reason { get; set; } = string.Empty;
+
+    }
+
+    public class SearchPattern
+    {
+        public Guid UserId { get; set; }
+        public int TotalSearches { get; set; }
+        public List<string> FrequentKeywords { get; set; } = new();
+        public PriceRange CommonPriceRange { get; set; } = new();
+        public List<string> PreferredLocations { get; set; } = new();
+        public DateTime FirstSearchDate { get; set; }
+        public DateTime LastSearchDate { get; set; }
+    }
+
+    public class PricePoint
+    {
+        public DateTime Date { get; set; }
+        public decimal Price { get; set; }
+        public string? ChangeReason { get; set; } // e.g., "Price reduced", "Market adjustment"
     }
 
     public class AuditLog

@@ -1,15 +1,17 @@
 using Habitera.Data;
+using Habitera.Extensions;
 using Habitera.Middleware;
 using Habitera.Models;
 using Habitera.Repositories;
 using Habitera.Services;
-using Habitera.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using StackExchange.Redis;
 using System;
 using System.Text;
 using System.Text.Json;
@@ -134,14 +136,38 @@ builder.Services.AddAuthorization();
 builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
 
 builder.Services.AddRepositories();
-builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+{
+    var configuration = ConfigurationOptions.Parse(
+        builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379"
+    );
+    return ConnectionMultiplexer.Connect(configuration);
+});
+
+builder.Services.AddHttpClient<EmailService>();
+
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+builder.Services.AddScoped<IRedisCacheService, RedisCacheService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
-builder.Services.AddHttpClient<EmailService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IPropertyService, PropertyService>();
+builder.Services.AddScoped<ISavedSearchService, SavedSearchService>();
+builder.Services.AddScoped<IRecommendationService, RecommendationService>();
+builder.Services.AddScoped<IPriceAnalyticsService, PriceAnalyticsService>();
+builder.Services.AddScoped<ICloudinaryService, CloudinaryService>();
+
+//builder.Services.AddHostedService<PropertySyncBackgroundService>();
+//builder.Services.AddHostedService<SavedSearchAlertsBackgroundService>();
 
 builder.Services.AddElasticsearch(builder.Configuration);
+
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<GzipCompressionProvider>();
+});
 
 builder.Services.AddCors(options =>
 {

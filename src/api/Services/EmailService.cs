@@ -1,3 +1,4 @@
+using Habitera.DTOs;
 using Habitera.Models;
 using Microsoft.AspNetCore.Identity;
 using System.Net;
@@ -15,6 +16,7 @@ namespace Habitera.Services
         Task SendPasswordResetAsync(string email, string token);
         Task SendPasswordChangedNotificationAsync(string email, string firstName);
         Task SendPasswordResetConfirmationAsync(string email, string firstName);
+        Task SendPropertyAlertsAsync(string email, string name, IEnumerable<PropertyDTO> matches);
         Task SendAccountDeletionConfirmationAsync(string email, string firstName);
     }
 
@@ -139,6 +141,83 @@ namespace Habitera.Services
             <strong>The Habitera Team</strong></p>
         </div>
     ";
+
+            await SendEmailViaBrevoAsync(email, subject, body);
+        }
+
+        public async Task SendPropertyAlertsAsync(
+    string email,
+    string searchName,
+    IEnumerable<PropertyDTO> matches)
+        {
+            var matchList = matches.ToList();
+
+            if (!matchList.Any())
+                return;
+
+            var subject = $"New properties match your saved search \"{searchName}\"";
+
+            var propertyItemsHtml = string.Join("", matchList.Take(5).Select(p => $@"
+        <tr>
+            <td style='padding:12px 0;border-bottom:1px solid #eee;'>
+                <strong>{p.Title}</strong><br/>
+                {p.City}<br/>
+                <span style='color:#2e7d32;font-weight:bold;'>
+                    {p.Price:C0}
+                </span><br/>
+                <a href='https://habitera.homes/property/{p.Id}' 
+                   style='color:#1a73e8;text-decoration:none;'>
+                    View details ?
+                </a>
+            </td>
+        </tr>
+    "));
+
+            var body = $@"
+    <table width='100%' cellpadding='0' cellspacing='0'>
+        <tr>
+            <td align='center'>
+                <table width='600' cellpadding='0' cellspacing='0' style='background:#ffffff;padding:24px;border-radius:6px;'>
+                    <tr>
+                        <td>
+                            <h2 style='margin-top:0;'>Good news!</h2>
+
+                            <p>
+                                We found <strong>{matchList.Count} new properties</strong>
+                                that match your saved search
+                                <strong>“{searchName}”</strong>.
+                            </p>
+
+                            <table width='100%' cellpadding='0' cellspacing='0'>
+                                {propertyItemsHtml}
+                            </table>
+
+                            <p style='margin-top:24px;'>
+                                <a href='https://habitera.homes/searches'
+                                   style='background:#1a73e8;color:#ffffff;
+                                          padding:12px 18px;
+                                          text-decoration:none;
+                                          border-radius:4px;
+                                          display:inline-block;'>
+                                    View all matching properties
+                                </a>
+                            </p>
+
+                            <p style='font-size:12px;color:#777;margin-top:24px;'>
+                                You’re receiving this email because alerts are enabled
+                                for this saved search. You can manage or disable alerts
+                                anytime in your account settings.
+                            </p>
+
+                            <p style='font-size:12px;color:#777;'>
+                                — The YourApp Team
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>";
 
             await SendEmailViaBrevoAsync(email, subject, body);
         }

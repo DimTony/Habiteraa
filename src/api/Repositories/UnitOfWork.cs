@@ -9,9 +9,11 @@ namespace Habitera.Repositories
         IGenericRepository<UserProfile> UserProfiles { get; }
         IGenericRepository<AgentProfile> AgentProfiles { get; }
         IGenericRepository<RefreshToken> RefreshTokens { get; }
+        IGenericRepository<AuditLog> AuditLogs { get; }
+        IGenericRepository<SavedSearch> SavedSearches { get; }
+        IGenericRepository<UserInteraction> UserInteractions { get; }
         IPasswordResetTokenRepository PasswordResetTokens { get; }
         IEmailVerificationTokenRepository EmailVerificationTokens { get; }
-        IGenericRepository<AuditLog> AuditLogs { get; }
         IPropertyRepository Properties { get; }
         IPropertyImageRepository PropertyImages { get; }
         IPropertyAmenityRepository PropertyAmenities { get; }
@@ -31,9 +33,11 @@ namespace Habitera.Repositories
         private IGenericRepository<UserProfile>? _userProfiles;
         private IGenericRepository<AgentProfile>? _agentProfiles;
         private IGenericRepository<RefreshToken>? _refreshTokens;
+        private IGenericRepository<SavedSearch>? _savedSearches;
+        private IGenericRepository<UserInteraction>? _userInteractions;
+        private IGenericRepository<AuditLog>? _auditLogs;
         private IPasswordResetTokenRepository? _passwordResetTokens;
         private IEmailVerificationTokenRepository? _emailVerificationTokens;
-        private IGenericRepository<AuditLog>? _auditLogs;
         private IPropertyRepository? _properties;
         private IPropertyImageRepository? _propertyImages;
         private IPropertyAmenityRepository? _propertyAmenities;
@@ -57,14 +61,18 @@ namespace Habitera.Repositories
         public IGenericRepository<RefreshToken> RefreshTokens =>
             _refreshTokens ??= new GenericRepository<RefreshToken>(_context);
 
+        public IGenericRepository<SavedSearch> SavedSearches =>
+           _savedSearches ??= new GenericRepository<SavedSearch>(_context);
+       public IGenericRepository<UserInteraction> UserInteractions =>
+           _userInteractions ??= new GenericRepository<UserInteraction>(_context);
+        public IGenericRepository<AuditLog> AuditLogs =>
+            _auditLogs ??= new GenericRepository<AuditLog>(_context);
         public IPasswordResetTokenRepository PasswordResetTokens =>
             _passwordResetTokens ??= new PasswordResetTokenRepository(_context);
 
         public IEmailVerificationTokenRepository EmailVerificationTokens =>
             _emailVerificationTokens ??= new EmailVerificationTokenRepository(_context);
 
-        public IGenericRepository<AuditLog> AuditLogs =>
-            _auditLogs ??= new GenericRepository<AuditLog>(_context);
 
         public IPropertyRepository Properties =>
             _properties ??= new PropertyRepository(_context);
