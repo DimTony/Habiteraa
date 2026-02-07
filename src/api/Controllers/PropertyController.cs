@@ -13,14 +13,103 @@ namespace Habitera.Controllers
     public class PropertyController : ControllerBase
     {
         private readonly IPropertyService _propertyService;
+        private readonly IRecommendationService _recommendationService;
+        private readonly IElasticsearchService _elasticsearchService;
         private readonly ILogger<PropertyController> _logger;
 
         public PropertyController(
             IPropertyService propertyService,
+            IRecommendationService recommendationService,
+            IElasticsearchService elasticsearchService,
             ILogger<PropertyController> logger)
         {
             _propertyService = propertyService;
+            _recommendationService = recommendationService;
+            _elasticsearchService = elasticsearchService;
             _logger = logger;
+        }
+
+        [HttpPost("Search")]
+        public async Task<IActionResult> SearchProperties([FromBody] PropertySearchRequest request)
+        {
+            var userId = User.Identity?.IsAuthenticated == true
+                ? Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value)
+                : (Guid?)null;
+
+            var result = await _propertyService.SearchPropertiesAsync(request);
+
+            // Track search if user is logged in
+            if (userId.HasValue && result.Properties.Any())
+            {
+                _ = Task.Run(async () =>
+                {
+                    foreach (var property in result.Properties.Take(10))
+                    {
+                        await _recommendationService.TrackUserInteractionAsync(
+                            userId.Value, property.Id, "search");
+                    }
+                });
+            }
+
+            return Ok(result);
+        }
+
+        [HttpGet("Published")]
+        public async Task<IActionResult> GetPublishedProperties([FromQuery] PaginatedRequest request)
+        {
+            var result = await _propertyService.GetPublishedPropertiesAsync(request);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("Nearby")]
+        public async Task<IActionResult> GetNearbyProperties(
+            [FromQuery] decimal latitude,
+            [FromQuery] decimal longitude,
+            [FromQuery] double radiusKm = 5)
+        {
+            var result = await _propertyService.GetNearbyPropertiesAsync(latitude, longitude, radiusKm);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("{propertyId}/Similar")]
+        public async Task<IActionResult> GetSimilarProperties(
+            Guid propertyId,
+            [FromQuery] int limit = 10)
+        {
+            var properties = await _propertyService.GetSimilarPropertiesAsync(propertyId, limit);
+            return Ok(new { properties });
+        }
+
+        [HttpGet("Trending")]
+        public async Task<IActionResult> GetTrendingProperties([FromQuery] int limit = 10)
+        {
+            var properties = await _propertyService.GetTrendingPropertiesAsync(limit);
+            return Ok(new { properties });
+        }
+
+        [HttpGet("Recommendations")]
+        [Authorize]
+        public async Task<IActionResult> GetRecommendations([FromQuery] int limit = 10)
+        {
+            var userId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var properties = await _recommendationService.GetPersonalizedRecommendationsAsync(userId, limit);
+            return Ok(new { properties });
+        }
+
+        //[HttpGet("Autocomplete")]
+        //public async Task<IActionResult> Autocomplete([FromQuery] string query, [FromQuery] int limit = 10)
+        //{
+        //    var suggestions = await _elasticsearchService.AutocompleteAsync(query, limit);
+        //    return Ok(new { suggestions });
+        //}
+
+        [HttpGet("Locations/Suggest")]
+        public async Task<IActionResult> GetLocationSuggestions(
+            [FromQuery] string query,
+            [FromQuery] int limit = 10)
+        {
+            var locations = await _elasticsearchService.GetLocationSuggestionsAsync(query, limit);
+            return Ok(new { locations });
         }
 
         [HttpPost]
@@ -64,30 +153,95 @@ namespace Habitera.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
+        [HttpGet("Agent/Properties")]
+        [Authorize(Roles = "Agent")]
+        public async Task<IActionResult> GetAgentProperties(
+            [FromQuery] PaginatedRequest request,
+            [FromQuery] PropertyStatus? status = null)
+        {
+            var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var result = await _propertyService.GetAgentPropertiesAsync(agentId, request, status);
+            return StatusCode(result.StatusCode, result);
+        }
 
-        //[HttpPost("{propertyId}/publish")]
-        //[Authorize(Roles = "Agent")]
-        //public async Task<IActionResult> PublishProperty(Guid propertyId)
-        //{
-        //    var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-        //    var result = await _propertyService.PublishPropertyAsync(agentId, propertyId);
+        [HttpDelete("{propertyId}")]
+        [Authorize(Roles = "Agent")]
+        public async Task<IActionResult> DeleteProperty(Guid propertyId)
+        {
+            var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var result = await _propertyService.DeletePropertyAsync(agentId, propertyId);
+            return StatusCode(result.StatusCode, result);
+        }
 
-        //    return StatusCode(result.StatusCode, result);
-        //}
+        [HttpPost("{propertyId}/Publish")]
+        [Authorize(Roles = "Agent")]
+        public async Task<IActionResult> PublishProperty(Guid propertyId)
+        {
+            var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var result = await _propertyService.PublishPropertyAsync(agentId, propertyId);
+            return StatusCode(result.StatusCode, result);
+        }
 
-        //[HttpGet("agent/dashboard")]
-        //[Authorize(Roles = "Agent")]
-        //public async Task<IActionResult> GetAgentDashboard()
-        //{
-        //    var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
-        //    var result = await _propertyService.GetAgentDashboardAsync(agentId);
+        [HttpPost("{propertyId}/Unpublish")]
+        [Authorize(Roles = "Agent")]
+        public async Task<IActionResult> UnpublishProperty(Guid propertyId)
+        {
+            var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var result = await _propertyService.UnpublishPropertyAsync(agentId, propertyId);
+            return StatusCode(result.StatusCode, result);
+        }
 
-        //    return StatusCode(result.StatusCode, result);
-        //}
+        [HttpPatch("{propertyId}/Status")]
+        [Authorize(Roles = "Agent")]
+        public async Task<IActionResult> UpdatePropertyStatus(
+            Guid propertyId,
+            [FromBody] PropertyStatus status)
+        {
+            var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var result = await _propertyService.UpdatePropertyStatusAsync(agentId, propertyId, status);
+            return StatusCode(result.StatusCode, result);
+        }
 
-        // Controllers/PropertyController.cs - Add these endpoints
+        [HttpPut("{propertyId}/Images/{imageId}/Primary")]
+        [Authorize(Roles = "Agent")]
+        public async Task<IActionResult> SetPrimaryImage(Guid propertyId, Guid imageId)
+        {
+            var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var result = await _propertyService.SetPrimaryImageAsync(agentId, propertyId, imageId);
+            return StatusCode(result.StatusCode, result);
+        }
 
-        [HttpPost("{propertyId}/images")]
+        [HttpPut("{propertyId}/Amenities")]
+        [Authorize(Roles = "Agent")]
+        public async Task<IActionResult> UpsertPropertyAmenity(
+            Guid propertyId,
+            [FromBody] PropertyAmenityDTO dto)
+        {
+            var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var result = await _propertyService.UpsertPropertyAmenityAsync(
+                agentId, propertyId, dto.Category, dto.Amenities);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("{propertyId}/Analytics")]
+        [Authorize(Roles = "Agent")]
+        public async Task<IActionResult> GetPropertyAnalytics(Guid propertyId)
+        {
+            var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var result = await _propertyService.GetPropertyAnalyticsAsync(agentId, propertyId);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("Agent/Dashboard")]
+        [Authorize(Roles = "Agent")]
+        public async Task<IActionResult> GetAgentDashboard()
+        {
+            var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var result = await _propertyService.GetAgentDashboardAsync(agentId);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpPost("{propertyId}/Images")]
         [Authorize(Roles = "Agent")]
         public async Task<IActionResult> UploadPropertyImage(
             Guid propertyId,
@@ -99,7 +253,7 @@ namespace Habitera.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-        [HttpPost("{propertyId}/images/multiple")]
+        [HttpPost("{propertyId}/Images/Multiple")]
         [Authorize(Roles = "Agent")]
         public async Task<IActionResult> UploadMultiplePropertyImages(
             Guid propertyId,
@@ -111,7 +265,7 @@ namespace Habitera.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-        [HttpDelete("{propertyId}/images/{imageId}")]
+        [HttpDelete("{propertyId}/Images/{imageId}")]
         [Authorize(Roles = "Agent")]
         public async Task<IActionResult> DeletePropertyImage(Guid propertyId, Guid imageId)
         {

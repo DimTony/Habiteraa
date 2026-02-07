@@ -11,35 +11,35 @@ namespace Habitera.Services
         Task<OperationResult<PropertyDTO>> CreatePropertyAsync(Guid agentId, CreatePropertyDTO dto);
         Task<OperationResult<PropertyDTO>> UpdatePropertyAsync(Guid agentId, Guid propertyId, UpdatePropertyDTO dto);
         Task<OperationResult<PropertyDTO>> GetPropertyByIdAsync(Guid propertyId, Guid? userId = null);
-        //Task<OperationResult<string>> DeletePropertyAsync(Guid agentId, Guid propertyId);
+        Task<OperationResult<string>> DeletePropertyAsync(Guid agentId, Guid propertyId);
 
         //// Agent Properties
-        //Task<PaginatedOperationResult<PropertyDTO>> GetAgentPropertiesAsync(
-        //    Guid agentId, PaginatedRequest request, PropertyStatus? status = null);
+        Task<PaginatedOperationResult<PropertyDTO>> GetAgentPropertiesAsync(
+            Guid agentId, PaginatedRequest request, PropertyStatus? status = null);
 
         //// Publishing
-        //Task<OperationResult<string>> PublishPropertyAsync(Guid agentId, Guid propertyId);
-        //Task<OperationResult<string>> UnpublishPropertyAsync(Guid agentId, Guid propertyId);
-        //Task<OperationResult<string>> UpdatePropertyStatusAsync(Guid agentId, Guid propertyId, PropertyStatus status);
+        Task<OperationResult<string>> PublishPropertyAsync(Guid agentId, Guid propertyId);
+        Task<OperationResult<string>> UnpublishPropertyAsync(Guid agentId, Guid propertyId);
+        Task<OperationResult<string>> UpdatePropertyStatusAsync(Guid agentId, Guid propertyId, PropertyStatus status);
 
         // Images
         Task<OperationResult<PropertyImageDTO>> AddPropertyImageAsync(Guid agentId, Guid propertyId, IFormFile imageFile);
         Task<OperationResult<List<PropertyImageDTO>>> AddMultiplePropertyImagesAsync(Guid agentId, Guid propertyId, IFormFileCollection imageFiles);
         Task<OperationResult<string>> DeletePropertyImageAsync(Guid agentId, Guid propertyId, Guid imageId);
-        //Task<OperationResult<string>> SetPrimaryImageAsync(Guid agentId, Guid propertyId, Guid imageId);
+        Task<OperationResult<string>> SetPrimaryImageAsync(Guid agentId, Guid propertyId, Guid imageId);
 
         //// Amenities
-        //Task<OperationResult<PropertyAmenityDTO>> UpsertPropertyAmenityAsync(
-        //    Guid agentId, Guid propertyId, AmenityCategory category, Dictionary<string, object> amenities);
+        Task<OperationResult<PropertyAmenityDTO>> UpsertPropertyAmenityAsync(
+            Guid agentId, Guid propertyId, AmenityCategory category, Dictionary<string, object> amenities);
 
         //// Analytics
-        //Task<OperationResult<PropertyAnalyticsDTO>> GetPropertyAnalyticsAsync(Guid agentId, Guid propertyId);
-        //Task<OperationResult<AgentDashboardDTO>> GetAgentDashboardAsync(Guid agentId);
+        Task<OperationResult<PropertyAnalyticsDTO>> GetPropertyAnalyticsAsync(Guid agentId, Guid propertyId);
+        Task<OperationResult<AgentDashboardDTO>> GetAgentDashboardAsync(Guid agentId);
 
         //// Public browsing
-        //Task<PaginatedOperationResult<PropertyDTO>> GetPublishedPropertiesAsync(PaginatedRequest request);
+        Task<PaginatedOperationResult<PropertyDTO>> GetPublishedPropertiesAsync(PaginatedRequest request);
         Task<OperationResult<int>> IncrementViewCountAsync(Guid propertyId);
-        //Task<OperationResult<List<PropertyDTO>>> GetNearbyPropertiesAsync(decimal latitude, decimal longitude, double radiusKm);
+        Task<OperationResult<List<PropertyDTO>>> GetNearbyPropertiesAsync(decimal latitude, decimal longitude, double radiusKm);
         
         // Search
         Task<PropertySearchResponse> SearchPropertiesAsync(PropertySearchRequest request);
@@ -227,7 +227,445 @@ namespace Habitera.Services
                     "An error occurred while retrieving the property", 500);
             }
         }
+        public async Task<OperationResult<string>> DeletePropertyAsync(Guid agentId, Guid propertyId)
+        {
+            try
+            {
+                var property = await _unitOfWork.Properties.GetByIdAsync(propertyId);
 
+                if (property == null)
+                {
+                    return OperationResult<string>.Failure("Property not found", 404);
+                }
+
+                if (property.AgentId != agentId)
+                {
+                    return OperationResult<string>.Failure("Unauthorized", 403);
+                }
+
+                // Soft delete by changing status
+                property.Status = PropertyStatus.Deleted;
+                property.UpdatedAt = DateTime.UtcNow;
+                _unitOfWork.Properties.Update(property);
+
+                await _unitOfWork.SaveChangesAsync();
+
+                // Remove from Elasticsearch
+                await _elasticsearchService.DeletePropertyAsync(propertyId);
+
+                _logger.LogInformation("Property {PropertyId} deleted by Agent {AgentId}",
+                    propertyId, agentId);
+
+                return OperationResult<string>.Successful(
+                    "Property deleted successfully",
+                    "Property deleted successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting property {PropertyId}", propertyId);
+                return OperationResult<string>.Failure(
+                    "An error occurred while deleting the property", 500);
+            }
+        }
+        public async Task<PaginatedOperationResult<PropertyDTO>> GetAgentPropertiesAsync(
+            Guid agentId,
+            PaginatedRequest request,
+            PropertyStatus? status = null)
+        {
+            try
+            {
+                var result = await _unitOfWork.Properties.GetPropertiesByAgentPagedAsync(
+                    agentId,
+                    request.PageNumber,
+                    request.PageSize,
+                    status);
+
+                var propertyDtos = _mapper.Map<List<PropertyDTO>>(result.Items);
+
+                return PaginatedOperationResult<PropertyDTO>.Successful(
+                    propertyDtos,
+                    result.TotalCount,
+                    request.PageNumber,
+                    request.PageSize,
+                    "Properties retrieved successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting properties for agent {AgentId}", agentId);
+                return PaginatedOperationResult<PropertyDTO>.Failure(
+                    "An error occurred while retrieving properties", 500);
+            }
+        }
+
+        public async Task<OperationResult<string>> PublishPropertyAsync(Guid agentId, Guid propertyId)
+        {
+            try
+            {
+                var property = await _unitOfWork.Properties.GetPropertyWithAllDetailsAsync(propertyId);
+
+                if (property == null)
+                {
+                    return OperationResult<string>.Failure("Property not found", 404);
+                }
+
+                if (property.AgentId != agentId)
+                {
+                    return OperationResult<string>.Failure("Unauthorized", 403);
+                }
+
+                if (property.IsPublished)
+                {
+                    return OperationResult<string>.Failure("Property is already published", 400);
+                }
+
+                // Validate property has minimum required data
+                if (string.IsNullOrWhiteSpace(property.Title))
+                {
+                    return OperationResult<string>.Failure(
+                        "Property must have a title before publishing", 400);
+                }
+
+                if (!property.Images.Any())
+                {
+                    return OperationResult<string>.Failure(
+                        "Property must have at least one image before publishing", 400);
+                }
+
+                await _unitOfWork.Properties.PublishPropertyAsync(propertyId);
+
+                // Index in Elasticsearch
+                await _elasticsearchService.IndexPropertyAsync(property);
+
+                _logger.LogInformation("Property {PropertyId} published by Agent {AgentId}",
+                    propertyId, agentId);
+
+                return OperationResult<string>.Successful(
+                    "Property published successfully",
+                    "Property published successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error publishing property {PropertyId}", propertyId);
+                return OperationResult<string>.Failure(
+                    "An error occurred while publishing the property", 500);
+            }
+        }
+
+        public async Task<OperationResult<string>> UnpublishPropertyAsync(Guid agentId, Guid propertyId)
+        {
+            try
+            {
+                var property = await _unitOfWork.Properties.GetByIdAsync(propertyId);
+
+                if (property == null)
+                {
+                    return OperationResult<string>.Failure("Property not found", 404);
+                }
+
+                if (property.AgentId != agentId)
+                {
+                    return OperationResult<string>.Failure("Unauthorized", 403);
+                }
+
+                if (!property.IsPublished)
+                {
+                    return OperationResult<string>.Failure("Property is already unpublished", 400);
+                }
+
+                await _unitOfWork.Properties.UnpublishPropertyAsync(propertyId);
+
+                // Remove from Elasticsearch
+                await _elasticsearchService.DeletePropertyAsync(propertyId);
+
+                _logger.LogInformation("Property {PropertyId} unpublished by Agent {AgentId}",
+                    propertyId, agentId);
+
+                return OperationResult<string>.Successful(
+                    "Property unpublished successfully",
+                    "Property unpublished successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error unpublishing property {PropertyId}", propertyId);
+                return OperationResult<string>.Failure(
+                    "An error occurred while unpublishing the property", 500);
+            }
+        }
+
+        public async Task<OperationResult<string>> UpdatePropertyStatusAsync(
+            Guid agentId,
+            Guid propertyId,
+            PropertyStatus status)
+        {
+            try
+            {
+                var property = await _unitOfWork.Properties.GetByIdAsync(propertyId);
+
+                if (property == null)
+                {
+                    return OperationResult<string>.Failure("Property not found", 404);
+                }
+
+                if (property.AgentId != agentId)
+                {
+                    return OperationResult<string>.Failure("Unauthorized", 403);
+                }
+
+                await _unitOfWork.Properties.UpdatePropertyStatusAsync(propertyId, status);
+
+                // Update in Elasticsearch if published
+                if (property.IsPublished)
+                {
+                    await _elasticsearchService.UpdatePropertyStatusAsync(propertyId, status);
+                }
+
+                _logger.LogInformation(
+                    "Property {PropertyId} status updated to {Status} by Agent {AgentId}",
+                    propertyId, status, agentId);
+
+                return OperationResult<string>.Successful(
+                    $"Property status updated to {status}",
+                    $"Property status updated to {status}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating property status for {PropertyId}", propertyId);
+                return OperationResult<string>.Failure(
+                    "An error occurred while updating property status", 500);
+            }
+        }
+
+        public async Task<OperationResult<string>> SetPrimaryImageAsync(
+            Guid agentId,
+            Guid propertyId,
+            Guid imageId)
+        {
+            try
+            {
+                var isOwner = await _unitOfWork.Properties.IsAgentOwnerAsync(propertyId, agentId);
+                if (!isOwner)
+                {
+                    return OperationResult<string>.Failure("Unauthorized", 403);
+                }
+
+                var image = await _unitOfWork.PropertyImages
+                    .FirstOrDefaultAsync(i => i.Id == imageId && i.PropertyId == propertyId);
+
+                if (image == null)
+                {
+                    return OperationResult<string>.Failure("Image not found", 404);
+                }
+
+                await _unitOfWork.PropertyImages.SetPrimaryImageAsync(propertyId, imageId);
+
+                // Sync to Elasticsearch
+                await _syncService.SyncPropertyToElasticsearchAsync(propertyId);
+
+                return OperationResult<string>.Successful(
+                    "Primary image updated successfully",
+                    "Primary image updated successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error setting primary image for property {PropertyId}", propertyId);
+                return OperationResult<string>.Failure(
+                    "An error occurred while setting primary image", 500);
+            }
+        }
+
+        public async Task<OperationResult<PropertyAmenityDTO>> UpsertPropertyAmenityAsync(
+            Guid agentId,
+            Guid propertyId,
+            AmenityCategory category,
+            Dictionary<string, object> amenities)
+        {
+            try
+            {
+                var isOwner = await _unitOfWork.Properties.IsAgentOwnerAsync(propertyId, agentId);
+                if (!isOwner)
+                {
+                    return OperationResult<PropertyAmenityDTO>.Failure("Unauthorized", 403);
+                }
+
+                await _unitOfWork.PropertyAmenities.UpsertAmenityAsync(
+                    propertyId,
+                    category,
+                    amenities);
+
+                // Sync to Elasticsearch
+                await _syncService.SyncPropertyToElasticsearchAsync(propertyId);
+
+                var amenityDto = new PropertyAmenityDTO
+                {
+                    Category = category,
+                    Amenities = amenities
+                };
+
+                return OperationResult<PropertyAmenityDTO>.Successful(
+                    amenityDto,
+                    "Amenities updated successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating amenities for property {PropertyId}", propertyId);
+                return OperationResult<PropertyAmenityDTO>.Failure(
+                    "An error occurred while updating amenities", 500);
+            }
+        }
+
+        public async Task<OperationResult<PropertyAnalyticsDTO>> GetPropertyAnalyticsAsync(
+            Guid agentId,
+            Guid propertyId)
+        {
+            try
+            {
+                var property = await _unitOfWork.Properties.GetPropertyWithAllDetailsAsync(propertyId);
+
+                if (property == null)
+                {
+                    return OperationResult<PropertyAnalyticsDTO>.Failure("Property not found", 404);
+                }
+
+                if (property.AgentId != agentId)
+                {
+                    return OperationResult<PropertyAnalyticsDTO>.Failure("Unauthorized", 403);
+                }
+
+                var bookings = await _unitOfWork.ViewingBookings.GetPropertyBookingsAsync(propertyId);
+
+                var daysOnMarket = property.PublishedAt.HasValue
+                    ? (DateTime.UtcNow - property.PublishedAt.Value).Days
+                    : 0;
+
+                var analytics = new PropertyAnalyticsDTO
+                {
+                    PropertyId = propertyId,
+                    TotalViews = property.ViewCount,
+                    TotalFavorites = property.FavoriteCount,
+                    TotalBookings = bookings.Count(),
+                    DaysOnMarket = daysOnMarket,
+                    RecentBookings = _mapper.Map<List<BookingDTO>>(
+                        bookings.OrderByDescending(b => b.CreatedAt).Take(5))
+                };
+
+                return OperationResult<PropertyAnalyticsDTO>.Successful(analytics);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting analytics for property {PropertyId}", propertyId);
+                return OperationResult<PropertyAnalyticsDTO>.Failure(
+                    "An error occurred while retrieving property analytics", 500);
+            }
+        }
+
+        public async Task<OperationResult<AgentDashboardDTO>> GetAgentDashboardAsync(Guid agentId)
+        {
+            try
+            {
+                var statusBreakdown = await _unitOfWork.Properties
+                    .GetPropertyCountByStatusAsync(agentId);
+
+                var recentProperties = await _unitOfWork.Properties
+                    .GetPropertiesByAgentPagedAsync(agentId, 1, 5);
+
+                var dashboard = new AgentDashboardDTO
+                {
+                    TotalProperties = statusBreakdown.Values.Sum(),
+                    ActiveProperties = statusBreakdown.GetValueOrDefault(PropertyStatus.Active, 0),
+                    PendingProperties = statusBreakdown.GetValueOrDefault(PropertyStatus.Pending, 0),
+                    SoldProperties = statusBreakdown.GetValueOrDefault(PropertyStatus.Sold, 0),
+                    RecentProperties = _mapper.Map<List<PropertyDTO>>(recentProperties.Items),
+                    PropertyStatusBreakdown = statusBreakdown
+                };
+
+                return OperationResult<AgentDashboardDTO>.Successful(dashboard);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting dashboard for agent {AgentId}", agentId);
+                return OperationResult<AgentDashboardDTO>.Failure(
+                    "An error occurred while retrieving dashboard data", 500);
+            }
+        }
+
+        public async Task<PaginatedOperationResult<PropertyDTO>> GetPublishedPropertiesAsync(
+            PaginatedRequest request)
+        {
+            try
+            {
+                var searchRequest = new PropertySearchRequest
+                {
+                    PageNumber = request.PageNumber,
+                    PageSize = request.PageSize,
+                    Query = request.SearchWord,
+                    Statuses = new List<string> { PropertyStatus.Active.ToString() },
+                    SortBy = "newest"
+                };
+
+                var results = await _elasticsearchService.SearchPropertiesAsync(searchRequest);
+
+                return PaginatedOperationResult<PropertyDTO>.Successful(
+                    results.Properties,
+                    (int)results.TotalCount,
+                    request.PageNumber,
+                    request.PageSize,
+                    "Properties retrieved successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting published properties");
+                return PaginatedOperationResult<PropertyDTO>.Failure(
+                    "An error occurred while retrieving properties", 500);
+            }
+        }
+
+        public async Task<OperationResult<List<PropertyDTO>>> GetNearbyPropertiesAsync(
+            decimal latitude,
+            decimal longitude,
+            double radiusKm)
+        {
+            try
+            {
+                var properties = await _elasticsearchService.SearchByRadiusAsync(
+                    (double)latitude,
+                    (double)longitude,
+                    radiusKm);
+
+                return OperationResult<List<PropertyDTO>>.Successful(
+                    properties,
+                    $"Found {properties.Count} properties within {radiusKm}km");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting nearby properties");
+                return OperationResult<List<PropertyDTO>>.Failure(
+                    "An error occurred while retrieving nearby properties", 500);
+            }
+        }
+
+        public async Task<List<PropertyDTO>> GetSimilarPropertiesAsync(Guid propertyId, int limit = 10)
+        {
+            try
+            {
+                var cacheKey = $"similar:properties:{propertyId}:{limit}";
+
+                var cached = await _cache.GetAsync<List<PropertyDTO>>(cacheKey);
+                if (cached != null)
+                    return cached;
+
+                var similar = await _elasticsearchService.GetSimilarPropertiesAsync(propertyId, limit);
+
+                // Cache for 1 hour
+                await _cache.SetAsync(cacheKey, similar, TimeSpan.FromHours(1));
+
+                return similar;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting similar properties for {PropertyId}", propertyId);
+                return new List<PropertyDTO>();
+            }
+        }
         public async Task<OperationResult<int>> IncrementViewCountAsync(Guid propertyId)
         {
             try
@@ -310,11 +748,6 @@ namespace Habitera.Services
             await _cache.SetAsync(cacheKey, dtos, TimeSpan.FromMinutes(30));
 
             return dtos;
-        }
-
-        public async Task<List<PropertyDTO>> GetSimilarPropertiesAsync(Guid propertyId, int limit = 10)
-        {
-            return new List<PropertyDTO>();
         }
 
         public async Task<OperationResult<PropertyImageDTO>> AddPropertyImageAsync(
