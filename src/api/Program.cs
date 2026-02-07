@@ -139,10 +139,37 @@ builder.Services.AddRepositories();
 
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 {
-    var configuration = ConfigurationOptions.Parse(
-        builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379"
-    );
-    return ConnectionMultiplexer.Connect(configuration);
+    var redisConnectionString = builder.Configuration.GetConnectionString("Redis")
+        ?? throw new InvalidOperationException("Redis connection string not configured");
+
+    var configuration = ConfigurationOptions.Parse(redisConnectionString);
+
+    // Important for cloud Redis
+    configuration.AbortOnConnectFail = false;
+    configuration.ConnectTimeout = 10000;
+    configuration.SyncTimeout = 5000;
+    configuration.ConnectRetry = 3;
+
+    // Enable SSL for secure cloud connections (Upstash and Redis Cloud use SSL)
+    if (redisConnectionString.StartsWith("rediss://"))
+    {
+        configuration.Ssl = true;
+        configuration.SslProtocols = System.Security.Authentication.SslProtocols.Tls12;
+    }
+
+    var logger = sp.GetRequiredService<ILogger<Program>>();
+
+    try
+    {
+        var multiplexer = ConnectionMultiplexer.Connect(configuration);
+        logger.LogInformation("Successfully connected to Redis");
+        return multiplexer;
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to connect to Redis. Starting without cache.");
+        throw;
+    }
 });
 
 builder.Services.AddHttpClient<EmailService>();
@@ -153,6 +180,7 @@ builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IPropertyService, PropertyService>();
+builder.Services.AddScoped<IPropertySyncService, PropertySyncService>();
 builder.Services.AddScoped<ISavedSearchService, SavedSearchService>();
 builder.Services.AddScoped<IRecommendationService, RecommendationService>();
 builder.Services.AddScoped<IPriceAnalyticsService, PriceAnalyticsService>();

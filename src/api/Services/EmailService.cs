@@ -1,11 +1,8 @@
 using Habitera.DTOs;
-using Habitera.Models;
-using Microsoft.AspNetCore.Identity;
+using SendGrid;
+using SendGrid.Helpers.Mail;
 using System.Net;
 using System.Net.Mail;
-using System.Numerics;
-using System.Threading.Tasks;
-
 
 namespace Habitera.Services
 {
@@ -53,7 +50,8 @@ namespace Habitera.Services
                 </div>
             ";
 
-            await SendEmailViaBrevoAsync(email, subject, body);
+            await SendEmailViaSendGridAsync(email, subject, body);
+            //await SendEmailViaBrevoAsync(email, subject, body);
         }
 
         public async Task SendPasswordResetAsync(string email, string token)
@@ -300,5 +298,53 @@ namespace Habitera.Services
         }
 
 
-    }
+        private async Task SendEmailViaSendGridAsync(string to, string subject, string body)
+        {
+            try
+            {
+                var apiKey = _configuration["SendGrid:ApiKey"];
+                var fromEmail = _configuration["SendGrid:FromEmail"];
+                var fromName = _configuration["SendGrid:FromName"] ?? "Habitera";
+
+                if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(fromEmail))
+                {
+                    _logger.LogWarning("SendGrid email configuration is missing. Required: ApiKey, FromEmail");
+                    return;
+                }
+
+                var client = new SendGridClient(apiKey);
+
+                var from = new EmailAddress(fromEmail, fromName);
+                var toEmail = new EmailAddress(to);
+
+                var msg = MailHelper.CreateSingleEmail(
+                    from,
+                    toEmail,
+                    subject,
+                    plainTextContent: null,
+                    htmlContent: body
+                );
+
+                var response = await client.SendEmailAsync(msg);
+
+                if ((int)response.StatusCode >= 200 && (int)response.StatusCode < 300)
+                {
+                    _logger.LogInformation($"Email sent successfully via SendGrid to: {to}");
+                }
+                else
+                {
+                    var responseBody = await response.Body.ReadAsStringAsync();
+                    _logger.LogError($"SendGrid error sending email to {to}: {response.StatusCode} - {responseBody}");
+                    throw new Exception("Failed to send email via SendGrid.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Unexpected error sending email to {to} via SendGrid");
+                throw;
+            }
+        }
+
+
+}
 }
