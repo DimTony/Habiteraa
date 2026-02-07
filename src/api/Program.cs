@@ -3,6 +3,7 @@ using Habitera.Middleware;
 using Habitera.Models;
 using Habitera.Repositories;
 using Habitera.Services;
+using Habitera.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
@@ -132,13 +133,15 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
 
-builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
+builder.Services.AddRepositories();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddHttpClient<EmailService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
+
+builder.Services.AddElasticsearch(builder.Configuration);
 
 builder.Services.AddCors(options =>
 {

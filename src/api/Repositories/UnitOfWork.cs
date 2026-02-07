@@ -5,13 +5,19 @@ namespace Habitera.Repositories
 {
     public interface IUnitOfWork : IDisposable
     {
-        IRepository<ApplicationUser> Users { get; }
-        IRepository<UserProfile> UserProfiles { get; }
-        IRepository<AgentProfile> AgentProfiles { get; }
-        IRepository<RefreshToken> RefreshTokens { get; }
-        IRepository<PasswordResetToken> PasswordResetTokens { get; }
-        IRepository<EmailVerificationToken> EmailVerificationTokens { get; }
-        IRepository<AuditLog> AuditLogs { get; }
+        IGenericRepository<ApplicationUser> Users { get; }
+        IGenericRepository<UserProfile> UserProfiles { get; }
+        IGenericRepository<AgentProfile> AgentProfiles { get; }
+        IGenericRepository<RefreshToken> RefreshTokens { get; }
+        IPasswordResetTokenRepository PasswordResetTokens { get; }
+        IEmailVerificationTokenRepository EmailVerificationTokens { get; }
+        IGenericRepository<AuditLog> AuditLogs { get; }
+        IPropertyRepository Properties { get; }
+        IPropertyImageRepository PropertyImages { get; }
+        IPropertyAmenityRepository PropertyAmenities { get; }
+        IFavoriteRepository Favorites { get; }
+        IViewingBookingRepository ViewingBookings { get; }
+
         Task<int> SaveChangesAsync();
         Task BeginTransactionAsync();
         Task CommitTransactionAsync();
@@ -21,39 +27,59 @@ namespace Habitera.Repositories
     public class UnitOfWork : IUnitOfWork
     {
         private readonly ApplicationDbContext _context;
-        private IRepository<ApplicationUser>? _users;
-        private IRepository<UserProfile>? _userProfiles;
-        private IRepository<AgentProfile>? _agentProfiles;
-        private IRepository<RefreshToken>? _refreshTokens;
-        private IRepository<PasswordResetToken>? _passwordResetTokens;
-        private IRepository<EmailVerificationToken>? _emailVerificationTokens;
-        private IRepository<AuditLog>? _auditLogs;
+        private IGenericRepository<ApplicationUser>? _users;
+        private IGenericRepository<UserProfile>? _userProfiles;
+        private IGenericRepository<AgentProfile>? _agentProfiles;
+        private IGenericRepository<RefreshToken>? _refreshTokens;
+        private IPasswordResetTokenRepository? _passwordResetTokens;
+        private IEmailVerificationTokenRepository? _emailVerificationTokens;
+        private IGenericRepository<AuditLog>? _auditLogs;
+        private IPropertyRepository? _properties;
+        private IPropertyImageRepository? _propertyImages;
+        private IPropertyAmenityRepository? _propertyAmenities;
+        private IFavoriteRepository? _favorites;
+        private IViewingBookingRepository? _viewingBookings;
 
         public UnitOfWork(ApplicationDbContext context)
         {
             _context = context;
         }
 
-        public IRepository<ApplicationUser> Users =>
-            _users ??= new Repository<ApplicationUser>(_context);
+        public IGenericRepository<ApplicationUser> Users =>
+            _users ??= new GenericRepository<ApplicationUser>(_context);
 
-        public IRepository<UserProfile> UserProfiles =>
-            _userProfiles ??= new Repository<UserProfile>(_context);
+        public IGenericRepository<UserProfile> UserProfiles =>
+            _userProfiles ??= new GenericRepository<UserProfile>(_context);
 
-        public IRepository<AgentProfile> AgentProfiles =>
-            _agentProfiles ??= new Repository<AgentProfile>(_context);
+        public IGenericRepository<AgentProfile> AgentProfiles =>
+            _agentProfiles ??= new GenericRepository<AgentProfile>(_context);
 
-        public IRepository<RefreshToken> RefreshTokens =>
-    _refreshTokens ??= new Repository<RefreshToken>(_context);
+        public IGenericRepository<RefreshToken> RefreshTokens =>
+            _refreshTokens ??= new GenericRepository<RefreshToken>(_context);
 
-        public IRepository<PasswordResetToken> PasswordResetTokens =>
-    _passwordResetTokens ??= new Repository<PasswordResetToken>(_context);
+        public IPasswordResetTokenRepository PasswordResetTokens =>
+            _passwordResetTokens ??= new PasswordResetTokenRepository(_context);
 
-        public IRepository<EmailVerificationToken> EmailVerificationTokens =>
-    _emailVerificationTokens ??= new Repository<EmailVerificationToken>(_context);
+        public IEmailVerificationTokenRepository EmailVerificationTokens =>
+            _emailVerificationTokens ??= new EmailVerificationTokenRepository(_context);
 
-        public IRepository<AuditLog> AuditLogs =>
-    _auditLogs ??= new Repository<AuditLog>(_context);
+        public IGenericRepository<AuditLog> AuditLogs =>
+            _auditLogs ??= new GenericRepository<AuditLog>(_context);
+
+        public IPropertyRepository Properties =>
+            _properties ??= new PropertyRepository(_context);
+
+        public IPropertyImageRepository PropertyImages =>
+            _propertyImages ??= new PropertyImageRepository(_context);
+
+        public IPropertyAmenityRepository PropertyAmenities =>
+            _propertyAmenities ??= new PropertyAmenityRepository(_context);
+
+        public IFavoriteRepository Favorites =>
+            _favorites ??= new FavoriteRepository(_context);
+
+        public IViewingBookingRepository ViewingBookings =>
+            _viewingBookings ??= new ViewingBookingRepository(_context);
 
         public async Task<int> SaveChangesAsync()
         {
