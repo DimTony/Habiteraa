@@ -4,6 +4,8 @@ using Habitera.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 using System.Security.Claims;
 
 namespace Habitera.Controllers
@@ -274,5 +276,71 @@ namespace Habitera.Controllers
 
             return StatusCode(result.StatusCode, result);
         }
+
+        [HttpPost("SeedTestData")]
+        [Authorize(Roles = "Agent,Admin")]
+        public async Task<IActionResult> SeedTestData()
+        {
+            var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            // Create sample properties for testing
+            var testProperties = new[]
+            {
+                new CreatePropertyDTO
+                {
+                    Title = "Luxury 3BR Apartment in Lekki Phase 1",
+                    Description = "Modern apartment with pool, gym, and 24/7 security",
+                    PropertyType = PropertyType.Apartment,
+                    ListingType = ListingType.ForRent,
+                    Tenor = PropertyTenor.Annually,
+                    City = "Lagos",
+                    State = "Lagos",
+                    Country = "Nigeria",
+                    Street = "Admiralty Way",
+                    PostalCode = "101245",
+                    Latitude = 6.4474m,
+                    Longitude = 3.4700m,
+                    Bedrooms = 3,
+                    Bathrooms = 2.5m,
+                    SquareFeet = 1500m,
+                    Price = 5000000m,
+                    Currency = "NGN"
+                },
+                // Add more test properties with varying prices, locations, etc.
+            };
+
+            foreach (var dto in testProperties)
+            {
+                await _propertyService.CreatePropertyAsync(agentId, dto);
+            }
+
+            return Ok(new { message = $"{testProperties.Length} test properties created" });
+        }
+
+        
+        [HttpGet("TestCachePerformance")]
+        public async Task<IActionResult> TestCachePerformance([FromQuery] string query)
+        {
+            var sw = Stopwatch.StartNew();
+
+            // First call (no cache)
+            var request = new PropertySearchRequest { Query = query, PageSize = 20 };
+            var result1 = await _propertyService.SearchPropertiesAsync(request);
+            var firstCallTime = sw.ElapsedMilliseconds;
+
+            sw.Restart();
+
+            // Second call (should be cached)
+            var result2 = await _propertyService.SearchPropertiesAsync(request);
+            var cachedCallTime = sw.ElapsedMilliseconds;
+
+            return Ok(new
+            {
+                firstCall = $"{firstCallTime}ms",
+                cachedCall = $"{cachedCallTime}ms",
+                improvement = $"{((firstCallTime - cachedCallTime) / (double)firstCallTime * 100):F1}%",
+                resultCount = result1.Properties.Count
+            });
+        }
+
     }
 }
