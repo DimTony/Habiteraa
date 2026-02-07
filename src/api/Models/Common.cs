@@ -2,6 +2,12 @@
 
 namespace Habitera.Models
 {
+    public class RedisSettings
+    {
+        public string ConnectionString { get; set; } = "localhost:6379";
+        public int DefaultCacheExpirationMinutes { get; set; } = 60;
+    }
+
     public class VerificationOptions
     {
         public int EmailCodeExpiryMinutes { get; set; }

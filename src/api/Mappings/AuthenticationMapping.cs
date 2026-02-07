@@ -29,6 +29,24 @@ namespace Habitera.Mappings
                 .ForMember(dest => dest.AgencyName, opt => opt.MapFrom(src => src.AgentProfile != null ? src.AgentProfile.AgencyName : null))
                 .ForMember(dest => dest.AverageRating, opt => opt.MapFrom(src => src.AgentProfile != null ? src.AgentProfile.AverageRating : (decimal?)null))
                 .ForMember(dest => dest.TotalReviews, opt => opt.MapFrom(src => src.AgentProfile != null ? src.AgentProfile.TotalReviews : (int?)null));
+
+           // CreateMap<UserProfile, UserProfileDTO>()
+           //.ForMember(dest => dest.Latitude, opt => opt.MapFrom(src =>
+           //    src.Location != null && !double.IsNaN(src.Location.Y) ? src.Location.Y : (double?)null))
+           //.ForMember(dest => dest.Longitude, opt => opt.MapFrom(src =>
+           //    src.Location != null && !double.IsNaN(src.Location.X) ? src.Location.X : (double?)null));
+
+           // CreateMap<UpdateUserProfileDTO, UserProfile>()
+           //     .ForMember(dest => dest.Location, opt => opt.MapFrom(src =>
+           //         src.Latitude.HasValue && src.Longitude.HasValue
+           //             ? new Point(src.Longitude.Value, src.Latitude.Value) { SRID = 4326 }
+           //             : null))
+           //     .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
+
+           // CreateMap<AgentProfile, AgentProfileDTO>();
+
+           // CreateMap<UpdateAgentProfileDTO, AgentProfile>()
+           //     .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
         }
     }
 }

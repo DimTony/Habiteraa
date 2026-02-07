@@ -2,6 +2,7 @@ using CloudinaryDotNet.Actions;
 using Elastic.Clients.Elasticsearch;
 using Elastic.Clients.Elasticsearch.Aggregations;
 using Elastic.Clients.Elasticsearch.QueryDsl;
+using Habitera.DTOs;
 using Habitera.Models;
 using Habitera.Repositories;
 using ElasticBoundingBox = Elastic.Clients.Elasticsearch.TopLeftBottomRightGeoBounds;
@@ -22,11 +23,12 @@ namespace Habitera.Services
         Task<bool> IncrementViewCountAsync(Guid propertyId);
         Task<bool> BulkIndexPropertiesAsync(IEnumerable<Property> properties);
         Task<bool> ReindexAllPropertiesAsync();
+        Task<List<string>> AutocompleteAsync(string query, int limit = 10);
         Task<bool> UpdateFavoriteCountAsync(Guid propertyId, int count);
-        Task<List<PropertyDocument>> SearchByRadiusAsync(double latitude, double longitude, double radiusKm, int limit = 50);
-        Task<List<PropertyDocument>> SearchByBoundingBoxAsync(double topLeftLat, double topLeftLon, double bottomRightLat, double bottomRightLon, int limit = 100);
-        Task<List<PropertyDocument>> GetSimilarPropertiesAsync(Guid propertyId, int limit = 10);
-        Task<List<PropertyDocument>> GetRecommendedPropertiesAsync(string userId, int limit = 10);
+        Task<List<PropertyDTO>> SearchByRadiusAsync(double latitude, double longitude, double radiusKm, int limit = 50);
+        Task<List<PropertyDTO>> SearchByBoundingBoxAsync(double topLeftLat, double topLeftLon, double bottomRightLat, double bottomRightLon, int limit = 100);
+        Task<List<PropertyDTO>> GetSimilarPropertiesAsync(Guid propertyId, int limit = 10);
+        Task<List<PropertyDTO>> GetRecommendedPropertiesAsync(string userId, int limit = 10);
         Task<List<string>> GetLocationSuggestionsAsync(string query, int limit = 10);
     }
 
@@ -55,13 +57,19 @@ namespace Habitera.Services
 
         public async Task<bool> CreateIndexAsync()
         {
-            try
-            {
-                var response = await _client.Indices.CreateAsync(IndexName, c => c
-                    .Mappings(m => m
-                        .Properties<PropertyDocument>(p => p
-                            .Text(t => t.Title, td => td.Analyzer("standard"))
-                            .Text(t => t.Description, td => td.Analyzer("standard"))
+            var response = await _client.Indices.CreateAsync(IndexName, c => c
+                .Mappings(m => m
+                    .Properties<PropertyDTO>(p => p
+                        .Text(t => t.Title, td => td
+                            .Analyzer("standard")
+                            .Fields(f => f
+                                .Text("autocomplete", ac => ac
+                                    .Analyzer("autocomplete")
+                                    .SearchAnalyzer("autocomplete_search")
+                                )
+                            )
+                        )
+                    .Text(t => t.Description, td => td.Analyzer("standard"))
                             .Text(t => t.FullAddress, td => td.Analyzer("standard"))
 
                             .Keyword(t => t.AgentId)
@@ -93,31 +101,34 @@ namespace Habitera.Services
                             .Keyword(t => t.AmenityTags)
 
                             .Nested(t => t.Images)
+                    )
+                )
+                .Settings(s => s
+                    .NumberOfShards(3)
+                    .NumberOfReplicas(1)
+                    .Analysis(a => a
+                        .Analyzers(an => an
+                            .Custom("autocomplete", ca => ca
+                                .Tokenizer("standard")
+                            )
+                            .Custom("autocomplete_search", ca => ca
+                                .Tokenizer("standard")
+                            )
+                        )
+                        .TokenFilters(tf => tf
+                            .EdgeNGram("autocomplete_filter", ng => ng
+                                .MinGram(2)
+                                .MaxGram(20)
+                            )
                         )
                     )
-                    .Settings(s => s
-                        .NumberOfShards(3)
-                        .NumberOfReplicas(1)
-                        .RefreshInterval(new Duration("1s"))
-                    )
-                );
+                    .RefreshInterval(new Duration("1s"))
 
-                if (response.IsValidResponse)
-                {
-                    _logger.LogInformation("Elasticsearch index '{IndexName}' created successfully", IndexName);
-                    return true;
-                }
+                )
+            );
 
-                _logger.LogError("Failed to create index: {Error}", response.DebugInformation);
-                return false;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error creating index");
-                return false;
-            }
+            return response.IsValidResponse;
         }
-
         public async Task<bool> IndexPropertyAsync(Property property)
         {
             try
@@ -144,7 +155,7 @@ namespace Habitera.Services
         {
             try
             {
-                var searchResponse = await _client.SearchAsync<PropertyDocument>(s => s
+                var searchResponse = await _client.SearchAsync<PropertyDTO>(s => s
                     .Indices(IndexName)
                     .From((request.PageNumber - 1) * request.PageSize)
                     .Size(request.PageSize)
@@ -196,7 +207,7 @@ namespace Habitera.Services
             {
                 var document = MapToDocument(property);
 
-                var response = await _client.UpdateAsync<PropertyDocument, PropertyDocument>(
+                var response = await _client.UpdateAsync<PropertyDTO, PropertyDTO>(
                     IndexName,
                     propertyId.ToString(),
                     u => u.Doc(document)
@@ -229,7 +240,7 @@ namespace Habitera.Services
         {
             try
             {
-                var response = await _client.UpdateAsync<PropertyDocument, object>(
+                var response = await _client.UpdateAsync<PropertyDTO, object>(
                     IndexName,
                     propertyId.ToString(),
                     u => u.Doc(new { Status = status.ToString() })
@@ -248,7 +259,7 @@ namespace Habitera.Services
         {
             try
             {
-                var response = await _client.UpdateAsync<PropertyDocument, object>(
+                var response = await _client.UpdateAsync<PropertyDTO, object>(
                     IndexName,
                     propertyId.ToString(),
                     u => u.Script(s => s
@@ -269,7 +280,7 @@ namespace Habitera.Services
         {
             try
             {
-                var response = await _client.UpdateAsync<PropertyDocument, object>(
+                var response = await _client.UpdateAsync<PropertyDTO, object>(
                     IndexName,
                     propertyId.ToString(),
                     u => u.Doc(new { FavoriteCount = count })
@@ -346,7 +357,33 @@ namespace Habitera.Services
             }
         }
 
-        public async Task<List<PropertyDocument>> SearchByRadiusAsync(
+        public async Task<List<string>> AutocompleteAsync(string query, int limit = 10)
+        {
+            var searchResponse = await _client.SearchAsync<PropertyDTO>(s => s
+                .Indices(IndexName)
+                .Size(limit)
+                .Query(q => q
+                    .Bool(b => b
+                        .Must(
+                            q.Match(m => m
+                                .Field("title.autocomplete")
+                                .Query(query)
+                            )
+                        )
+                        .Filter(q.Term(t => t.Field(f => f.IsPublished).Value(true)))
+                    )
+                )
+                .Source(false)
+                .Fields(f => f.Field(p => p.Title))
+            );
+
+            return searchResponse.Documents
+                .Select(d => d.Title)
+                .Distinct()
+                .ToList();
+        }
+
+        public async Task<List<PropertyDTO>> SearchByRadiusAsync(
      double latitude,
      double longitude,
      double radiusKm,
@@ -354,7 +391,7 @@ namespace Habitera.Services
         {
             try
             {
-                var searchResponse = await _client.SearchAsync<PropertyDocument>(s => s
+                var searchResponse = await _client.SearchAsync<PropertyDTO>(s => s
                     .Indices(IndexName)
                     .Size(limit)
                     .Query(q => q
@@ -388,7 +425,7 @@ namespace Habitera.Services
                 if (!searchResponse.IsValidResponse)
                 {
                     _logger.LogError("Radius search failed: {Error}", searchResponse.DebugInformation);
-                    return new List<PropertyDocument>();
+                    return new List<PropertyDTO>();
                 }
 
                 return searchResponse.Documents.ToList();
@@ -396,11 +433,11 @@ namespace Habitera.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during radius search");
-                return new List<PropertyDocument>();
+                return new List<PropertyDTO>();
             }
         }
 
-        public async Task<List<PropertyDocument>> SearchByBoundingBoxAsync(
+        public async Task<List<PropertyDTO>> SearchByBoundingBoxAsync(
             double topLeftLat,
             double topLeftLon,
             double bottomRightLat,
@@ -409,7 +446,7 @@ namespace Habitera.Services
         {
             try
             {
-                var searchResponse = await _client.SearchAsync<PropertyDocument>(s => s
+                var searchResponse = await _client.SearchAsync<PropertyDTO>(s => s
                     .Indices(IndexName)
                     .Size(limit)
                     .Query(q => q
@@ -437,7 +474,7 @@ namespace Habitera.Services
                 if (!searchResponse.IsValidResponse)
                 {
                     _logger.LogError("Bounding box search failed: {Error}", searchResponse.DebugInformation);
-                    return new List<PropertyDocument>();
+                    return new List<PropertyDTO>();
                 }
 
                 return searchResponse.Documents.ToList();
@@ -445,24 +482,24 @@ namespace Habitera.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during bounding box search");
-                return new List<PropertyDocument>();
+                return new List<PropertyDTO>();
             }
         }
 
-        public async Task<List<PropertyDocument>> GetSimilarPropertiesAsync(Guid propertyId, int limit = 10)
+        public async Task<List<PropertyDTO>> GetSimilarPropertiesAsync(Guid propertyId, int limit = 10)
         {
             // First, get the source property
-            var getResponse = await _client.GetAsync<PropertyDocument>(propertyId.ToString(), g => g.Index(IndexName));
+            var getResponse = await _client.GetAsync<PropertyDTO>(propertyId.ToString(), g => g.Index(IndexName));
 
             if (!getResponse.IsValidResponse || getResponse.Source == null)
             {
-                return new List<PropertyDocument>();
+                return new List<PropertyDTO>();
             }
 
             var sourceProperty = getResponse.Source;
 
             // Search for similar properties using More Like This
-            var searchResponse = await _client.SearchAsync<PropertyDocument>(s => s
+            var searchResponse = await _client.SearchAsync<PropertyDTO>(s => s
                 .Indices(IndexName)
                 .Size(limit)
                 .Query(q => q
@@ -471,14 +508,18 @@ namespace Habitera.Services
                             q.Term(t => t.Field(f => f.IsPublished).Value(true)),
                             q.MoreLikeThis(mlt => mlt
                                 .Fields(new[] { "title", "description", "city" })
-                                .Like(new Like[] { new LikeDocument<PropertyDocument>(propertyId.ToString()) })
+// Replace this line:
+//.Like(new Like[] { new LikeDocument<PropertyDTO>(propertyId.ToString()) })
+
+// With this:
+.Like(new Like[] { new LikeDocument { Id = propertyId.ToString(), Index = IndexName } })
                                 .MinTermFreq(1)
                                 .MinDocFreq(1)
                             )
                         )
                         .Filter(
                             // Same property type
-                            q.Term(t => t.Field(f => f.PropertyType).Value(sourceProperty.PropertyType)),
+                            q.Term(t => t.Field(f => f.PropertyType).Value(sourceProperty.PropertyType.ToString())),
                             // Similar price range (+/- 30%)
                             q.Range(r => r.Number(nr => nr
                                 .Field(f => f.Price)
@@ -497,12 +538,12 @@ namespace Habitera.Services
             return searchResponse.Documents.ToList();
         }
 
-        public async Task<List<PropertyDocument>> GetRecommendedPropertiesAsync(string userId, int limit = 10)
+        public async Task<List<PropertyDTO>> GetRecommendedPropertiesAsync(string userId, int limit = 10)
         {
             // This is a simplified recommendation system
             // In production, you'd use user browsing history, favorites, etc.
 
-            var searchResponse = await _client.SearchAsync<PropertyDocument>(s => s
+            var searchResponse = await _client.SearchAsync<PropertyDTO>(s => s
                 .Indices(IndexName)
                 .Size(limit)
                 .Query(q => q
@@ -527,7 +568,7 @@ namespace Habitera.Services
 
         public async Task<List<string>> GetLocationSuggestionsAsync(string query, int limit = 10)
         {
-            var searchResponse = await _client.SearchAsync<PropertyDocument>(s => s
+            var searchResponse = await _client.SearchAsync<PropertyDTO>(s => s
                 .Indices(IndexName)
                 .Size(0) // We only want aggregations
                 .Query(q => q
@@ -562,7 +603,7 @@ namespace Habitera.Services
         }
 
 
-        private PropertyDocument MapToDocument(Property property)
+        private PropertyDTO MapToDocument(Property property)
         {
             var primaryImage = property.Images?.FirstOrDefault(i => i.IsPrimary);
 
@@ -598,15 +639,15 @@ namespace Habitera.Services
                 ? (DateTime.UtcNow - property.PublishedAt.Value).Days
                 : 0;
 
-            return new PropertyDocument
+            return new PropertyDTO
             {
                 Id = property.Id,
                 AgentId = property.AgentId,
                 Title = property.Title,
                 Description = property.Description,
                 
-                PropertyType = property.PropertyType.ToString(),
-                ListingType = property.ListingType.ToString(),
+                PropertyType = property.PropertyType,
+                ListingType = property.ListingType,
 
                 Street = property.Street,
                 City = property.City,
@@ -639,14 +680,14 @@ namespace Habitera.Services
                 ViewCount = property.ViewCount,
                 FavoriteCount = property.FavoriteCount,
 
-                Images = property.Images?.Select(i => new PropertyImageDocument
+                Images = property.Images?.Select(i => new PropertyImageDTO
                 {
                     Id = i.Id,
                     ImageUrl = i.ImageUrl,
                     ThumbnailUrl = i.ThumbnailUrl,
                     DisplayOrder = i.DisplayOrder,
                     IsPrimary = i.IsPrimary
-                }).ToList() ?? new List<PropertyImageDocument>(),
+                }).ToList() ?? new List<PropertyImageDTO>(),
 
                 PrimaryImageUrl = primaryImage?.ImageUrl,
 
@@ -665,7 +706,7 @@ namespace Habitera.Services
             };
         }
 
-        private Query BuildSearchQuery(QueryDescriptor<PropertyDocument> q, PropertySearchRequest request)
+        private Query BuildSearchQuery(QueryDescriptor<PropertyDTO> q, PropertySearchRequest request)
         {
             var mustQueries = new List<Query>();
             var filterQueries = new List<Query>();
@@ -741,9 +782,9 @@ namespace Habitera.Services
 
         }
 
-        private SortOptionsDescriptor<PropertyDocument> BuildSortOptions(PropertySearchRequest request)
+        private SortOptionsDescriptor<PropertyDTO> BuildSortOptions(PropertySearchRequest request)
         {
-            var sortDescriptor = new SortOptionsDescriptor<PropertyDocument>();
+            var sortDescriptor = new SortOptionsDescriptor<PropertyDTO>();
 
             switch (request.SortBy?.ToLower())
             {
