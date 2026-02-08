@@ -267,7 +267,6 @@ namespace Habitera.Services
         public async Task<OperationResult<AuthResponseDTO>> LoginAsync(LoginRequestDTO request)
         {
             var correlationId = Guid.NewGuid().ToString();
-
             try
             {
                 var validationResult = ValidateLoginInput(request);
@@ -280,8 +279,11 @@ namespace Habitera.Services
                 }
 
                 var normalizedEmail = NormalizeEmail(request.Email);
+
+                // Conditionally include AgentProfile based on user type
                 var user = await _userManager.Users
                     .Include(u => u.Profile)
+                    .Include(u => u.AgentProfile)  // Add this
                     .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail.ToUpper());
 
                 if (user == null)
@@ -326,7 +328,10 @@ namespace Habitera.Services
                 var refreshToken = await _tokenService.GenerateRefreshTokenAsync(
                     user.Id, request.DeviceInfo, request.IpAddress);
 
-                var userDto = _mapper.Map<UserDTO>(user);
+                // Map to appropriate DTO based on UserType
+                ApplicationUserDTO userDto = user.UserType == UserType.Agent
+                    ? _mapper.Map<AgentUserDTO>(user)
+                    : _mapper.Map<RegularUserDTO>(user);
 
                 var authResponse = new AuthResponseDTO
                 {
@@ -340,9 +345,6 @@ namespace Habitera.Services
                     "Login Successful.",
                     200
                 );
-
-
-
             }
             catch (Exception ex)
             {
@@ -403,8 +405,10 @@ namespace Habitera.Services
                     );
                 }
 
+                // Include AgentProfile for agents
                 var user = await _userManager.Users
                     .Include(u => u.Profile)
+                    .Include(u => u.AgentProfile)  // Added
                     .FirstOrDefaultAsync(u => u.Id == userId);
 
                 if (user == null)
@@ -509,7 +513,10 @@ namespace Habitera.Services
                             "Tokens refreshed successfully",
                             correlationId);
 
-                        var userDto = _mapper.Map<UserDTO>(user);
+                        // Map to appropriate DTO based on UserType
+                        ApplicationUserDTO userDto = user.UserType == UserType.Agent
+                            ? _mapper.Map<AgentUserDTO>(user)
+                            : _mapper.Map<RegularUserDTO>(user);
 
                         var authResponse = new AuthResponseDTO
                         {
@@ -550,7 +557,7 @@ namespace Habitera.Services
                 );
             }
         }
-
+        
         public async Task<OperationResult<AuthResponseDTO>> ResendVerificationCodeAsync(ResendCodeRequestDTO request)
         {
             var correlationId = Guid.NewGuid().ToString();
@@ -711,9 +718,10 @@ namespace Habitera.Services
 
                 var normalizedEmail = NormalizeEmail(request.Email);
 
-                
+                // Include AgentProfile for agents
                 var user = await _userManager.Users
                     .Include(u => u.Profile)
+                    .Include(u => u.AgentProfile)  // Added
                     .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail.ToUpper());
 
                 if (user == null || string.IsNullOrWhiteSpace(user.Email))
@@ -734,13 +742,15 @@ namespace Habitera.Services
                         "Email verification attempted for already verified account. CorrelationId: {CorrelationId}, UserId: {UserId}",
                         correlationId, user.Id);
 
-                    
                     var existingRoles = await _userManager.GetRolesAsync(user);
                     var existingAccessToken = _tokenService.GenerateAccessToken(user, existingRoles);
                     var existingRefreshToken = await _tokenService.GenerateRefreshTokenAsync(
                         user.Id, request.DeviceInfo, request.IpAddress);
 
-                    var existingUserDto = _mapper.Map<UserDTO>(user);
+                    // Map to appropriate DTO based on UserType
+                    ApplicationUserDTO existingUserDto = user.UserType == UserType.Agent
+                        ? _mapper.Map<AgentUserDTO>(user)
+                        : _mapper.Map<RegularUserDTO>(user);
 
                     return OperationResult<AuthResponseDTO>.Successful(
                         new AuthResponseDTO
@@ -789,15 +799,14 @@ namespace Habitera.Services
 
                     try
                     {
-                        
                         validToken.Used = true;
                         validToken.UsedAt = DateTime.UtcNow;
-                        
+
                         user.EmailConfirmed = true;
                         user.Status = UserStatus.Active;
                         user.UpdatedAt = DateTime.UtcNow;
                         await _userManager.UpdateAsync(user);
-                        
+
                         var activeTokens = await _unitOfWork.EmailVerificationTokens
                             .GetActiveTokensByEmailAsync(user.Email);
 
@@ -808,9 +817,7 @@ namespace Habitera.Services
                         }
 
                         await _unitOfWork.SaveChangesAsync();
-
                         await transaction.CommitAsync();
-
                     }
                     catch (Exception transactionEx)
                     {
@@ -855,7 +862,10 @@ namespace Habitera.Services
                     var refreshToken = await _tokenService.GenerateRefreshTokenAsync(
                         user.Id, request.DeviceInfo, request.IpAddress);
 
-                    var userDto = _mapper.Map<UserDTO>(user);
+                    // Map to appropriate DTO based on UserType
+                    ApplicationUserDTO userDto = user.UserType == UserType.Agent
+                        ? _mapper.Map<AgentUserDTO>(user)
+                        : _mapper.Map<RegularUserDTO>(user);
 
                     var authResponse = new AuthResponseDTO
                     {
