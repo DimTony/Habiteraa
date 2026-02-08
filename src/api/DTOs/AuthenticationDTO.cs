@@ -4,7 +4,8 @@ using NetTopologySuite.Geometries;
 
 namespace Habitera.DTOs
 {
-    public class UserDTO
+
+    public class ApplicationUserDTO
     {
         public Guid Id { get; set; }
         public string Email { get; set; } = string.Empty;
@@ -16,10 +17,14 @@ namespace Habitera.DTOs
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
         public DateTime? LastLoginAt { get; set; }
+    }
 
+    public class RegularUserDTO : ApplicationUserDTO
+    {
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
         public string FullName => $"{FirstName} {LastName}";
+
         public string City { get; set; } = string.Empty;
         public string State { get; set; } = string.Empty;
         public string Country { get; set; } = string.Empty;
@@ -28,21 +33,26 @@ namespace Habitera.DTOs
         public double? Longitude { get; set; }
 
         public string PreferredLanguage { get; set; } = "en";
-        public bool EmailNotifications { get; set; } = true;
-        public bool PushNotifications { get; set; } = true;
+        public bool EmailNotifications { get; set; }
+        public bool PushNotifications { get; set; }
+    }
 
+    public class AgentUserDTO : ApplicationUserDTO
+    {
         public string? LicenseNumber { get; set; }
         public string? AgencyName { get; set; }
-        public decimal? AverageRating { get; set; }
-        public int? TotalReviews { get; set; }
+        public decimal AverageRating { get; set; }
+        public int TotalReviews { get; set; }
     }
 
     public class AuthResponseDTO
     {
         public string? Token { get; set; }
         public string? RefreshToken { get; set; }
-        public UserDTO? User { get; set; }
+        public ApplicationUserDTO? User { get; set; }
     }
+
+
 
     public abstract class DeviceInfoRequestDTO
     {

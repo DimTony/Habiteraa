@@ -8,7 +8,9 @@ namespace Habitera.Mappings
     {
         public MappingProfile()
         {
-            CreateMap<ApplicationUser, UserDTO>()
+            // Map ApplicationUser to RegularUserDTO
+            CreateMap<ApplicationUser, RegularUserDTO>()
+                .IncludeBase<ApplicationUser, ApplicationUserDTO>()
                 .ForMember(dest => dest.FirstName, opt => opt.MapFrom(src => src.Profile.FirstName))
                 .ForMember(dest => dest.LastName, opt => opt.MapFrom(src => src.Profile.LastName))
                 .ForMember(dest => dest.City, opt => opt.MapFrom(src => src.Profile.City))
@@ -24,29 +26,30 @@ namespace Habitera.Mappings
                         : (double?)null))
                 .ForMember(dest => dest.PreferredLanguage, opt => opt.MapFrom(src => src.Profile.PreferredLanguage))
                 .ForMember(dest => dest.EmailNotifications, opt => opt.MapFrom(src => src.Profile.EmailNotifications))
-                .ForMember(dest => dest.PushNotifications, opt => opt.MapFrom(src => src.Profile.PushNotifications))
-                .ForMember(dest => dest.LicenseNumber, opt => opt.MapFrom(src => src.AgentProfile != null ? src.AgentProfile.LicenseNumber : null))
-                .ForMember(dest => dest.AgencyName, opt => opt.MapFrom(src => src.AgentProfile != null ? src.AgentProfile.AgencyName : null))
-                .ForMember(dest => dest.AverageRating, opt => opt.MapFrom(src => src.AgentProfile != null ? src.AgentProfile.AverageRating : (decimal?)null))
-                .ForMember(dest => dest.TotalReviews, opt => opt.MapFrom(src => src.AgentProfile != null ? src.AgentProfile.TotalReviews : (int?)null));
+                .ForMember(dest => dest.PushNotifications, opt => opt.MapFrom(src => src.Profile.PushNotifications));
 
-           // CreateMap<UserProfile, UserProfileDTO>()
-           //.ForMember(dest => dest.Latitude, opt => opt.MapFrom(src =>
-           //    src.Location != null && !double.IsNaN(src.Location.Y) ? src.Location.Y : (double?)null))
-           //.ForMember(dest => dest.Longitude, opt => opt.MapFrom(src =>
-           //    src.Location != null && !double.IsNaN(src.Location.X) ? src.Location.X : (double?)null));
+            // Map ApplicationUser to AgentUserDTO
+            CreateMap<ApplicationUser, AgentUserDTO>()
+                .IncludeBase<ApplicationUser, ApplicationUserDTO>()
+                .ForMember(dest => dest.LicenseNumber, opt => opt.MapFrom(src =>
+                    src.AgentProfile != null ? src.AgentProfile.LicenseNumber : null))
+                .ForMember(dest => dest.AgencyName, opt => opt.MapFrom(src =>
+                    src.AgentProfile != null ? src.AgentProfile.AgencyName : null))
+                .ForMember(dest => dest.AverageRating, opt => opt.MapFrom(src =>
+                    src.AgentProfile != null ? src.AgentProfile.AverageRating : 0))
+                .ForMember(dest => dest.TotalReviews, opt => opt.MapFrom(src =>
+                    src.AgentProfile != null ? src.AgentProfile.TotalReviews : 0));
 
-           // CreateMap<UpdateUserProfileDTO, UserProfile>()
-           //     .ForMember(dest => dest.Location, opt => opt.MapFrom(src =>
-           //         src.Latitude.HasValue && src.Longitude.HasValue
-           //             ? new Point(src.Longitude.Value, src.Latitude.Value) { SRID = 4326 }
-           //             : null))
-           //     .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
-
-           // CreateMap<AgentProfile, AgentProfileDTO>();
-
-           // CreateMap<UpdateAgentProfileDTO, AgentProfile>()
-           //     .ForAllMembers(opts => opts.Condition((src, dest, srcMember) => srcMember != null));
+            // Base mapping for common properties
+            CreateMap<ApplicationUser, ApplicationUserDTO>()
+                .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.Id))
+                .ForMember(dest => dest.Email, opt => opt.MapFrom(src => src.Email ?? string.Empty))
+                .ForMember(dest => dest.ProfilePhoto, opt => opt.MapFrom(src => src.ProfilePhoto))
+                .ForMember(dest => dest.UserType, opt => opt.MapFrom(src => src.UserType))
+                .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status))
+                .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => src.CreatedAt))
+                .ForMember(dest => dest.UpdatedAt, opt => opt.MapFrom(src => src.UpdatedAt))
+                .ForMember(dest => dest.LastLoginAt, opt => opt.MapFrom(src => src.LastLoginAt));
         }
     }
 }
