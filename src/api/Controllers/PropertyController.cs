@@ -16,18 +16,15 @@ namespace Habitera.Controllers
     {
         private readonly IPropertyService _propertyService;
         private readonly IRecommendationService _recommendationService;
-        private readonly IElasticsearchService _elasticsearchService;
         private readonly ILogger<PropertyController> _logger;
 
         public PropertyController(
             IPropertyService propertyService,
             IRecommendationService recommendationService,
-            IElasticsearchService elasticsearchService,
             ILogger<PropertyController> logger)
         {
             _propertyService = propertyService;
             _recommendationService = recommendationService;
-            _elasticsearchService = elasticsearchService;
             _logger = logger;
         }
 
@@ -110,8 +107,9 @@ namespace Habitera.Controllers
             [FromQuery] string query,
             [FromQuery] int limit = 10)
         {
-            var locations = await _elasticsearchService.GetLocationSuggestionsAsync(query, limit);
-            return Ok(new { locations });
+            //var locations = await _elasticsearchService.GetLocationSuggestionsAsync(query, limit);
+            //return Ok(new { locations });
+            return Ok(new {  });
         }
 
         [HttpPost]

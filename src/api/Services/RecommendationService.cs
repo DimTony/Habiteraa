@@ -64,6 +64,7 @@ namespace Habitera.Services
                     //// Cache for 1 hour
                     //await _cache.SetAsync(cacheKey, trending, TimeSpan.FromHours(1));
                     //return trending;
+                    return new List<PropertyDTO>();
                 }
 
                 // Build search based on preferences
