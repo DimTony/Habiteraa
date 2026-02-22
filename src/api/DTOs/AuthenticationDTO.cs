@@ -9,6 +9,11 @@ namespace Habitera.DTOs
     {
         public Guid Id { get; set; }
         public string Email { get; set; } = string.Empty;
+
+        public string FirstName { get; set; } = string.Empty;
+        public string LastName { get; set; } = string.Empty;
+        public string FullName => $"{FirstName} {LastName}";
+        public string PhoneNumber { get; set; } = string.Empty;
         public string? ProfilePhoto { get; set; }
 
         public UserType UserType { get; set; }
@@ -17,13 +22,12 @@ namespace Habitera.DTOs
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
         public DateTime? LastLoginAt { get; set; }
+        public bool ProfileCompleted { get; set; }
+        public DateTime? ProfileCompletedAt { get; set; }
     }
 
     public class RegularUserDTO : ApplicationUserDTO
     {
-        public string FirstName { get; set; } = string.Empty;
-        public string LastName { get; set; } = string.Empty;
-        public string FullName => $"{FirstName} {LastName}";
 
         public string City { get; set; } = string.Empty;
         public string State { get; set; } = string.Empty;

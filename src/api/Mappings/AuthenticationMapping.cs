@@ -13,6 +13,7 @@ namespace Habitera.Mappings
                 .IncludeBase<ApplicationUser, ApplicationUserDTO>()
                 .ForMember(dest => dest.FirstName, opt => opt.MapFrom(src => src.Profile.FirstName))
                 .ForMember(dest => dest.LastName, opt => opt.MapFrom(src => src.Profile.LastName))
+                .ForMember(dest => dest.PhoneNumber, opt => opt.MapFrom(src => src.PhoneNumber))
                 .ForMember(dest => dest.City, opt => opt.MapFrom(src => src.Profile.City))
                 .ForMember(dest => dest.State, opt => opt.MapFrom(src => src.Profile.State))
                 .ForMember(dest => dest.Country, opt => opt.MapFrom(src => src.Profile.Country))
@@ -31,6 +32,9 @@ namespace Habitera.Mappings
             // Map ApplicationUser to AgentUserDTO
             CreateMap<ApplicationUser, AgentUserDTO>()
                 .IncludeBase<ApplicationUser, ApplicationUserDTO>()
+                 .ForMember(dest => dest.FirstName, opt => opt.MapFrom(src => src.Profile.FirstName))
+                .ForMember(dest => dest.LastName, opt => opt.MapFrom(src => src.Profile.LastName))
+                .ForMember(dest => dest.PhoneNumber, opt => opt.MapFrom(src => src.PhoneNumber))
                 .ForMember(dest => dest.LicenseNumber, opt => opt.MapFrom(src =>
                     src.AgentProfile != null ? src.AgentProfile.LicenseNumber : null))
                 .ForMember(dest => dest.AgencyName, opt => opt.MapFrom(src =>
@@ -44,6 +48,9 @@ namespace Habitera.Mappings
             CreateMap<ApplicationUser, ApplicationUserDTO>()
                 .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.Id))
                 .ForMember(dest => dest.Email, opt => opt.MapFrom(src => src.Email ?? string.Empty))
+                .ForMember(dest => dest.FirstName, opt => opt.MapFrom(src => src.Profile.FirstName ?? string.Empty))
+                .ForMember(dest => dest.LastName, opt => opt.MapFrom(src => src.Profile.LastName ?? string.Empty))
+                .ForMember(dest => dest.PhoneNumber, opt => opt.MapFrom(src => src.PhoneNumber ?? string.Empty))
                 .ForMember(dest => dest.ProfilePhoto, opt => opt.MapFrom(src => src.ProfilePhoto))
                 .ForMember(dest => dest.UserType, opt => opt.MapFrom(src => src.UserType))
                 .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status))

@@ -36,6 +36,9 @@ namespace Habitera.Models
         public required UserProfile Profile { get; set; }
         public AgentProfile? AgentProfile { get; set; }
 
+        public bool ProfileCompleted { get; set; } = false;
+        public DateTime? ProfileCompletedAt { get; set; }
+
     }
 
     public enum UserType
