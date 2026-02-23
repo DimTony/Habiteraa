@@ -53,6 +53,9 @@ namespace Habitera.Repositories
             int pageSize,
             PropertyStatus? status = null);
 
+        Task<PagedResult<Property>> GetPropertiesByAgentAndStatusesPagedAsync(
+    Guid agentId, int pageNumber, int pageSize, PropertyStatus[] statuses);
+
         Task<Property?> GetPropertyWithImagesAsync(Guid propertyId);
         Task<Property?> GetPropertyWithAllDetailsAsync(Guid propertyId);
 
@@ -70,8 +73,10 @@ namespace Habitera.Repositories
             int limit = 50);
 
         Task<IEnumerable<Property>> GetPropertiesByIdsAsync(IEnumerable<Guid> propertyIds);
+
         Task<bool> PropertyExistsAsync(Guid propertyId);
         Task<bool> IsAgentOwnerAsync(Guid propertyId, Guid agentId);
+
     }
 
     public interface IPropertyImageRepository : IGenericRepository<PropertyImage>
@@ -380,6 +385,29 @@ namespace Habitera.Repositories
             };
         }
 
+        public async Task<PagedResult<Property>> GetPropertiesByAgentAndStatusesPagedAsync(
+    Guid agentId, int pageNumber, int pageSize, PropertyStatus[] statuses)
+        {
+            var query = _dbSet
+                .Where(p => p.AgentId == agentId && statuses.Contains(p.Status))
+                .Include(p => p.Images.OrderBy(i => i.DisplayOrder).Take(1));
+
+            var totalCount = await query.CountAsync();
+
+            var items = await query
+                .OrderByDescending(p => p.CreatedAt)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new PagedResult<Property>
+            {
+                Items = items,
+                TotalCount = totalCount,
+                PageNumber = pageNumber,
+                PageSize = pageSize
+            };
+        }
         public async Task<Property?> GetPropertyWithImagesAsync(Guid propertyId)
         {
             return await _dbSet

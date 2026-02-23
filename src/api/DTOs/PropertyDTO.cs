@@ -60,6 +60,57 @@ namespace Habitera.DTOs
         public int DaysOnMarket { get; set; }
     }
 
+    public class SaveAsDraftDTO
+    {
+        [Required, MaxLength(200)]
+        public string Title { get; set; } = string.Empty;
+
+        public string Description { get; set; } = string.Empty;
+
+
+        public PropertyType PropertyType { get; set; }
+
+
+        public ListingType ListingType { get; set; }
+
+        public PropertyTenor Tenor { get; set; } = PropertyTenor.Annually;
+
+
+        public string Street { get; set; } = string.Empty;
+
+        [Required]
+        public string City { get; set; } = string.Empty;
+
+        
+        public string State { get; set; } = string.Empty;
+
+        
+        public string Country { get; set; } = string.Empty;
+
+        
+        public string PostalCode { get; set; } = string.Empty;
+
+        
+        public decimal Latitude { get; set; }
+
+        
+        public decimal Longitude { get; set; }
+
+        public PropertyAmenityDTO? Amenities { get; set; }
+
+        public int Bedrooms { get; set; }
+        public decimal Bathrooms { get; set; }
+        public decimal SquareFeet { get; set; }
+        public decimal LotSize { get; set; }
+        public int? YearBuilt { get; set; }
+
+        [Required]
+        public decimal Price { get; set; }
+
+        public string Currency { get; set; } = "NGN";
+
+        public bool SaveAsDraft { get; set; } = true;
+    }
 
     public class CreatePropertyDTO
     {
@@ -110,6 +161,7 @@ namespace Habitera.DTOs
         public decimal Price { get; set; }
 
         public string Currency { get; set; } = "NGN";
+
     }
 
     public class UpdatePropertyDTO

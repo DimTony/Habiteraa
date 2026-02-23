@@ -28,6 +28,36 @@ namespace Habitera.Controllers
             _logger = logger;
         }
 
+        [HttpGet("Search/Active")]
+        [Authorize(Roles = "Agent")]
+        public async Task<IActionResult> SearchActiveProperties([FromQuery] PaginatedRequest request)
+        {
+            var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var statuses = new[] { PropertyStatus.Active, PropertyStatus.Sold };
+            var result = await _propertyService.GetAgentPropertiesByStatusesAsync(agentId, request, statuses);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("Search/UnderReview")]
+        [Authorize(Roles = "Agent")]
+        public async Task<IActionResult> SearchUnderReviewProperties([FromQuery] PaginatedRequest request)
+        {
+            var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var statuses = new[] { PropertyStatus.Pending };
+            var result = await _propertyService.GetAgentPropertiesByStatusesAsync(agentId, request, statuses);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("Search/Inactive")]
+        [Authorize(Roles = "Agent")]
+        public async Task<IActionResult> SearchInactiveProperties([FromQuery] PaginatedRequest request)
+        {
+            var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var statuses = new[] { PropertyStatus.Inactive, PropertyStatus.Withdrawn, PropertyStatus.Expired, PropertyStatus.Draft };
+            var result = await _propertyService.GetAgentPropertiesByStatusesAsync(agentId, request, statuses);
+            return StatusCode(result.StatusCode, result);
+        }
+
         [HttpPost("Search")]
         public async Task<IActionResult> SearchProperties([FromBody] PropertySearchRequest request)
         {
@@ -70,9 +100,9 @@ namespace Habitera.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-        [HttpGet("{propertyId}/Similar")]
+        [HttpGet("Similar")]
         public async Task<IActionResult> GetSimilarProperties(
-            Guid propertyId,
+           [FromQuery] Guid propertyId,
             [FromQuery] int limit = 10)
         {
             var properties = await _propertyService.GetSimilarPropertiesAsync(propertyId, limit);
@@ -102,15 +132,15 @@ namespace Habitera.Controllers
         //    return Ok(new { suggestions });
         //}
 
-        [HttpGet("Locations/Suggest")]
-        public async Task<IActionResult> GetLocationSuggestions(
-            [FromQuery] string query,
-            [FromQuery] int limit = 10)
-        {
-            //var locations = await _elasticsearchService.GetLocationSuggestionsAsync(query, limit);
-            //return Ok(new { locations });
-            return Ok(new {  });
-        }
+        //[HttpGet("Locations/Suggest")]
+        //public async Task<IActionResult> GetLocationSuggestions(
+        //    [FromQuery] string query,
+        //    [FromQuery] int limit = 10)
+        //{
+        //    //var locations = await _elasticsearchService.GetLocationSuggestionsAsync(query, limit);
+        //    //return Ok(new { locations });
+        //    return Ok(new {  });
+        //}
 
         [HttpPost]
         [Authorize(Roles = "Agent")]
@@ -125,9 +155,38 @@ namespace Habitera.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-        [HttpPut("{propertyId}")]
+        [HttpPost("Draft")]
         [Authorize(Roles = "Agent")]
-        public async Task<IActionResult> UpdateProperty(Guid propertyId, [FromBody] UpdatePropertyDTO dto)
+        public async Task<IActionResult> SaveDraft([FromBody] SaveAsDraftDTO dto)
+        {
+            var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            dto.SaveAsDraft = true;
+            var result = await _propertyService.SavePropertyAsDraftAsync(agentId, dto);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpPut("Draft")]
+        [Authorize(Roles = "Agent")]
+        public async Task<IActionResult> UpdateDraft([FromQuery] Guid propertyId, [FromBody] SaveAsDraftDTO dto)
+        {
+            var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var result = await _propertyService.UpdatePropertyAsync(agentId, propertyId, dto);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpGet("Agent/Drafts")]
+        [Authorize(Roles = "Agent")]
+        public async Task<IActionResult> GetAgentDrafts([FromQuery] PaginatedRequest request)
+        {
+            var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+            var statuses = new[] { PropertyStatus.Draft };
+            var result = await _propertyService.GetAgentPropertiesByStatusesAsync(agentId, request, statuses);
+            return StatusCode(result.StatusCode, result);
+        }
+
+        [HttpPut("")]
+        [Authorize(Roles = "Agent")]
+        public async Task<IActionResult> UpdateProperty([FromQuery] Guid propertyId, [FromBody] SaveAsDraftDTO dto)
         {
             var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var result = await _propertyService.UpdatePropertyAsync(agentId, propertyId, dto);
@@ -135,8 +194,8 @@ namespace Habitera.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-        [HttpGet("{propertyId}")]
-        public async Task<IActionResult> GetProperty(Guid propertyId)
+        [HttpGet("")]
+        public async Task<IActionResult> GetProperty([FromQuery] Guid propertyId)
         {
             var userId = User.Identity?.IsAuthenticated == true
                 ? Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value)
@@ -164,37 +223,37 @@ namespace Habitera.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-        [HttpDelete("{propertyId}")]
+        [HttpDelete("Delete")]
         [Authorize(Roles = "Agent")]
-        public async Task<IActionResult> DeleteProperty(Guid propertyId)
+        public async Task<IActionResult> DeleteProperty([FromQuery] Guid propertyId)
         {
             var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var result = await _propertyService.DeletePropertyAsync(agentId, propertyId);
             return StatusCode(result.StatusCode, result);
         }
 
-        [HttpPost("{propertyId}/Publish")]
+        [HttpPost("Publish")]
         [Authorize(Roles = "Agent")]
-        public async Task<IActionResult> PublishProperty(Guid propertyId)
+        public async Task<IActionResult> PublishProperty([FromQuery] Guid propertyId)
         {
             var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var result = await _propertyService.PublishPropertyAsync(agentId, propertyId);
             return StatusCode(result.StatusCode, result);
         }
 
-        [HttpPost("{propertyId}/Unpublish")]
+        [HttpPost("Unpublish")]
         [Authorize(Roles = "Agent")]
-        public async Task<IActionResult> UnpublishProperty(Guid propertyId)
+        public async Task<IActionResult> UnpublishProperty([FromQuery] Guid propertyId)
         {
             var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var result = await _propertyService.UnpublishPropertyAsync(agentId, propertyId);
             return StatusCode(result.StatusCode, result);
         }
 
-        [HttpPatch("{propertyId}/Status")]
+        [HttpPatch("/Status")]
         [Authorize(Roles = "Agent")]
         public async Task<IActionResult> UpdatePropertyStatus(
-            Guid propertyId,
+            [FromQuery] Guid propertyId,
             [FromBody] PropertyStatus status)
         {
             var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
@@ -202,19 +261,19 @@ namespace Habitera.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-        [HttpPut("{propertyId}/Images/{imageId}/Primary")]
+        [HttpPut("Images/Primary")]
         [Authorize(Roles = "Agent")]
-        public async Task<IActionResult> SetPrimaryImage(Guid propertyId, Guid imageId)
+        public async Task<IActionResult> SetPrimaryImage([FromQuery] Guid propertyId, [FromQuery] Guid imageId)
         {
             var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var result = await _propertyService.SetPrimaryImageAsync(agentId, propertyId, imageId);
             return StatusCode(result.StatusCode, result);
         }
 
-        [HttpPut("{propertyId}/Amenities")]
+        [HttpPut("Amenities")]
         [Authorize(Roles = "Agent")]
         public async Task<IActionResult> UpsertPropertyAmenity(
-            Guid propertyId,
+            [FromQuery] Guid propertyId,
             [FromBody] PropertyAmenityDTO dto)
         {
             var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
@@ -223,9 +282,9 @@ namespace Habitera.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-        [HttpGet("{propertyId}/Analytics")]
+        [HttpGet("Analytics")]
         [Authorize(Roles = "Agent")]
-        public async Task<IActionResult> GetPropertyAnalytics(Guid propertyId)
+        public async Task<IActionResult> GetPropertyAnalytics([FromQuery] Guid propertyId)
         {
             var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var result = await _propertyService.GetPropertyAnalyticsAsync(agentId, propertyId);
@@ -241,10 +300,10 @@ namespace Habitera.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-        [HttpPost("{propertyId}/Images")]
+        [HttpPost("Images")]
         [Authorize(Roles = "Agent")]
         public async Task<IActionResult> UploadPropertyImage(
-            Guid propertyId,
+           [FromQuery] Guid propertyId,
             IFormFile image)
         {
             var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
@@ -253,10 +312,10 @@ namespace Habitera.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-        [HttpPost("{propertyId}/Images/Multiple")]
+        [HttpPost("Images/Multiple")]
         [Authorize(Roles = "Agent")]
         public async Task<IActionResult> UploadMultiplePropertyImages(
-            Guid propertyId,
+           [FromQuery] Guid propertyId,
             [FromForm] IFormFileCollection images)
         {
             var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
@@ -265,9 +324,9 @@ namespace Habitera.Controllers
             return StatusCode(result.StatusCode, result);
         }
 
-        [HttpDelete("{propertyId}/Images/{imageId}")]
+        [HttpDelete("Images")]
         [Authorize(Roles = "Agent")]
-        public async Task<IActionResult> DeletePropertyImage(Guid propertyId, Guid imageId)
+        public async Task<IActionResult> DeletePropertyImage([FromQuery] Guid propertyId, [FromQuery] Guid imageId)
         {
             var agentId = Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
             var result = await _propertyService.DeletePropertyImageAsync(agentId, propertyId, imageId);

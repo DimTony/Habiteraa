@@ -184,13 +184,14 @@ namespace Habitera.Models
 
     public enum PropertyStatus
     {
-        Active = 0,
-        Pending = 1,
-        Sold = 2,
-        Inactive = 3,
-        Withdrawn = 4,
-        Expired = 5,
-        Deleted = 6
+        Draft = 0,
+        Active = 1,
+        Pending = 2,
+        Sold = 3,
+        Inactive = 4,
+        Withdrawn = 5,
+        Expired = 6,
+        Deleted = 7
     }
 
     public enum AmenityCategory

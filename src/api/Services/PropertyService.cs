@@ -1,21 +1,27 @@
-﻿using Habitera.DTOs;
+﻿using AutoMapper;
+using Elastic.Clients.Elasticsearch.Snapshot;
+using Habitera.DTOs;
 using Habitera.Models;
 using Habitera.Repositories;
+using Microsoft.AspNetCore.Http.HttpResults;
+using NetTopologySuite.Features;
 using System.Text;
-using AutoMapper;
 
 namespace Habitera.Services
 {
     public interface IPropertyService
     {
+        Task<OperationResult<PropertyDTO>> SavePropertyAsDraftAsync(Guid agentId, SaveAsDraftDTO dto);
         Task<OperationResult<PropertyDTO>> CreatePropertyAsync(Guid agentId, CreatePropertyDTO dto);
-        Task<OperationResult<PropertyDTO>> UpdatePropertyAsync(Guid agentId, Guid propertyId, UpdatePropertyDTO dto);
+        Task<OperationResult<PropertyDTO>> UpdatePropertyAsync(Guid agentId, Guid propertyId, SaveAsDraftDTO dto);
         Task<OperationResult<PropertyDTO>> GetPropertyByIdAsync(Guid propertyId, Guid? userId = null);
         Task<OperationResult<string>> DeletePropertyAsync(Guid agentId, Guid propertyId);
 
         //// Agent Properties
         Task<PaginatedOperationResult<PropertyDTO>> GetAgentPropertiesAsync(
             Guid agentId, PaginatedRequest request, PropertyStatus? status = null);
+        Task<PaginatedOperationResult<PropertyDTO>> GetAgentPropertiesByStatusesAsync(
+Guid agentId, PaginatedRequest request, PropertyStatus[] statuses);
 
         //// Publishing
         Task<OperationResult<string>> PublishPropertyAsync(Guid agentId, Guid propertyId);
@@ -43,6 +49,8 @@ namespace Habitera.Services
         
         // Search
         Task<PropertySearchResponse> SearchPropertiesAsync(PropertySearchRequest request);
+   
+
         Task<List<PropertyDTO>> GetTrendingPropertiesAsync(int limit = 10);
         Task<List<PropertyDTO>> GetSimilarPropertiesAsync(Guid propertyId, int limit = 10);
     }
@@ -76,6 +84,81 @@ namespace Habitera.Services
             _cloudinaryService = cloudinaryService;
             _cache = cache;
             _logger = logger;
+        }
+
+        public async Task<OperationResult<PropertyDTO>> SavePropertyAsDraftAsync(Guid agentId, SaveAsDraftDTO dto)
+        {
+            try
+            {
+                // Validate agent
+                var agent = await _unitOfWork.Users.GetByIdAsync(agentId);
+                if (agent == null || agent.UserType != UserType.Agent)
+                {
+                    return OperationResult<PropertyDTO>.Failure("Agent not found", 404);
+                }
+
+                var validationResult = ValidateDraftPropertyInput(dto);
+                if (!validationResult.IsValid)
+                {
+                    return OperationResult<PropertyDTO>.Failure(
+                       validationResult.ErrorMessage,
+                       400
+                   );
+                }
+
+                var property = new Property
+                {
+                    Id = Guid.NewGuid(),
+                    AgentId = agentId,
+                    Title = dto.Title,
+                    Description = dto.Description,
+                    PropertyType = dto.PropertyType,
+                    ListingType = dto.ListingType,
+                    Tenor = dto.Tenor,
+
+                    Street = dto.Street,
+                    City = dto.City,
+                    State = dto.State,
+                    Country = dto.Country,
+                    PostalCode = dto.PostalCode,
+                    Latitude = dto.Latitude,
+                    Longitude = dto.Longitude,
+
+                    Bedrooms = dto.Bedrooms,
+                    Bathrooms = dto.Bathrooms,
+                    SquareFeet = dto.SquareFeet,
+                    LotSize = dto.LotSize,
+                    YearBuilt = dto.YearBuilt,
+
+                    Price = dto.Price,
+                    Currency = dto.Currency,
+
+                    Status = PropertyStatus.Draft,
+                    IsPublished = false,
+                    IsFeatured = false,
+
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                await _unitOfWork.Properties.AddAsync(property);
+                await _unitOfWork.SaveChangesAsync();
+
+                _logger.LogInformation("Property {Status}: {PropertyId} by Agent: {AgentId}",
+                      "drafted", property.Id, agentId);
+
+                var propertyDto = _mapper.Map<PropertyDTO>(property);
+                return OperationResult<PropertyDTO>.Successful(
+                    propertyDto,
+                    "Draft saved successfully",
+                    201);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving property as draft for agent {AgentId}", agentId);
+                return OperationResult<PropertyDTO>.Failure(
+                    "An error occurred while creating the property", 500);
+            }
         }
 
         public async Task<OperationResult<PropertyDTO>> CreatePropertyAsync(Guid agentId, CreatePropertyDTO dto)
@@ -116,7 +199,7 @@ namespace Habitera.Services
                     Price = dto.Price,
                     Currency = dto.Currency,
 
-                    Status = PropertyStatus.Active,
+                    Status = PropertyStatus.Pending,
                     IsPublished = false,
                     IsFeatured = false,
 
@@ -127,8 +210,8 @@ namespace Habitera.Services
                 await _unitOfWork.Properties.AddAsync(property);
                 await _unitOfWork.SaveChangesAsync();
 
-                _logger.LogInformation("Property created: {PropertyId} by Agent: {AgentId}",
-                    property.Id, agentId);
+                _logger.LogInformation("Property {Status}: {PropertyId} by Agent: {AgentId}",
+                      "created", property.Id, agentId);
 
                 var propertyDto = _mapper.Map<PropertyDTO>(property);
                 return OperationResult<PropertyDTO>.Successful(
@@ -145,7 +228,7 @@ namespace Habitera.Services
         }
 
         public async Task<OperationResult<PropertyDTO>> UpdatePropertyAsync(
-            Guid agentId, Guid propertyId, UpdatePropertyDTO dto)
+            Guid agentId, Guid propertyId, SaveAsDraftDTO dto)
         {
             try
             {
@@ -161,15 +244,45 @@ namespace Habitera.Services
                     return OperationResult<PropertyDTO>.Failure("Unauthorized", 403);
                 }
 
+                var validationResult = dto.SaveAsDraft
+                    ? ValidateDraftPropertyInput(dto)
+                    : ValidatePendingProperty(dto);
+
+                if (!validationResult.IsValid)
+                {
+                    return OperationResult<PropertyDTO>.Failure(
+                        validationResult.ErrorMessage,
+                        400
+                    );
+                }
+
                 // Update properties
                 property.Title = dto.Title ?? property.Title;
                 property.Description = dto.Description ?? property.Description;
-                property.PropertyType = dto.PropertyType ?? property.PropertyType;
-                property.ListingType = dto.ListingType ?? property.ListingType;
-                property.Price = dto.Price ?? property.Price;
-                property.Bedrooms = dto.Bedrooms ?? property.Bedrooms;
-                property.Bathrooms = dto.Bathrooms ?? property.Bathrooms;
-                property.SquareFeet = dto.SquareFeet ?? property.SquareFeet;
+                property.PropertyType = dto.PropertyType;
+                property.ListingType = dto.ListingType;
+                property.Tenor = dto.Tenor;
+                property.Street = dto.Street;
+                property.City = dto.City;
+                property.State = dto.State;
+                property.Country = dto.Country;
+                property.PostalCode = dto.PostalCode;
+                property.Latitude = dto.Latitude;
+                property.Longitude = dto.Longitude;
+
+                property.Price = dto.Price;
+                property.Bedrooms = dto.Bedrooms;
+                property.Bathrooms = dto.Bathrooms;
+                property.SquareFeet = dto.SquareFeet;
+                property.LotSize = dto.LotSize;
+                property.YearBuilt = dto.YearBuilt;
+                property.Currency = dto.Currency;
+
+                property.Status = dto.SaveAsDraft ? PropertyStatus.Draft : PropertyStatus.Pending;
+
+                property.IsPublished = false;
+                property.IsFeatured = false;
+
                 property.UpdatedAt = DateTime.UtcNow;
 
                 _unitOfWork.Properties.Update(property);
@@ -299,7 +412,30 @@ namespace Habitera.Services
                     "An error occurred while retrieving properties", 500);
             }
         }
+        public async Task<PaginatedOperationResult<PropertyDTO>> GetAgentPropertiesByStatusesAsync(
+    Guid agentId, PaginatedRequest request, PropertyStatus[] statuses)
+        {
+            try
+            {
+                var result = await _unitOfWork.Properties.GetPropertiesByAgentAndStatusesPagedAsync(
+                    agentId, request.PageNumber, request.PageSize, statuses);
 
+                var propertyDtos = _mapper.Map<List<PropertyDTO>>(result.Items);
+
+                return PaginatedOperationResult<PropertyDTO>.Successful(
+                    propertyDtos,
+                    result.TotalCount,
+                    request.PageNumber,
+                    request.PageSize,
+                    "Properties retrieved successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting properties by statuses for agent {AgentId}", agentId);
+                return PaginatedOperationResult<PropertyDTO>.Failure(
+                    "An error occurred while retrieving properties", 500);
+            }
+        }
         public async Task<OperationResult<string>> PublishPropertyAsync(Guid agentId, Guid propertyId)
         {
             try
@@ -321,11 +457,34 @@ namespace Habitera.Services
                     return OperationResult<string>.Failure("Property is already published", 400);
                 }
 
-                // Validate property has minimum required data
-                if (string.IsNullOrWhiteSpace(property.Title))
+                //// Validate property has minimum required data
+                //if (string.IsNullOrWhiteSpace(property.Title))
+                //{
+                //    return OperationResult<string>.Failure(
+                //        "Property must have a title before publishing", 400);
+                //}
+
+                if (property.Status == PropertyStatus.Draft)
                 {
-                    return OperationResult<string>.Failure(
-                        "Property must have a title before publishing", 400);
+                    // Validate all required fields are now filled before allowing publish
+                    var validationErrors = new List<string>();
+
+                    if (string.IsNullOrWhiteSpace(property.Title))
+                        validationErrors.Add("Title");
+                    if (property.Price <= 0)
+                        validationErrors.Add("Price");
+                    if (string.IsNullOrWhiteSpace(property.City))
+                        validationErrors.Add("City");
+                    if (string.IsNullOrWhiteSpace(property.State))
+                        validationErrors.Add("State");
+
+                    if (validationErrors.Any())
+                    {
+                        return OperationResult<string>.Failure(
+                            $"Cannot publish draft. Missing required fields: {string.Join(", ", validationErrors)}", 400);
+                    }
+
+                    property.Status = PropertyStatus.Active;
                 }
 
                 if (!property.Images.Any())
@@ -333,6 +492,7 @@ namespace Habitera.Services
                     return OperationResult<string>.Failure(
                         "Property must have at least one image before publishing", 400);
                 }
+
 
                 await _unitOfWork.Properties.PublishPropertyAsync(propertyId);
 
@@ -974,6 +1134,65 @@ namespace Habitera.Services
                       $"{request.PropertyTypes}:{request.PageNumber}:{request.PageSize}";
 
             return Convert.ToBase64String(Encoding.UTF8.GetBytes(key));
+        }
+
+        private class ValidationResult
+        {
+            public bool IsValid { get; }
+            public string ErrorMessage { get; }
+
+            public ValidationResult(bool isValid, string? errorMessage = null)
+            {
+                IsValid = isValid;
+                ErrorMessage = errorMessage ?? string.Empty;
+            }
+        }
+
+        private ValidationResult ValidateDraftPropertyInput(SaveAsDraftDTO request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Title))
+                return new ValidationResult(false, "Title is required");
+            if (request.Price <= 0)
+                return new ValidationResult(false, "Price must be greater than zero");
+
+            if (string.IsNullOrWhiteSpace(request.City))
+                return new ValidationResult(false, "City is required");
+
+            if (request.Bathrooms <= 0)
+                return new ValidationResult(false, "Must have at least 1 bathroom");
+            if (request.Bedrooms <= 0)
+                return new ValidationResult(false, "Must have at least 1 bedroom");
+
+
+            return new ValidationResult(true);
+        }
+
+        private ValidationResult ValidatePendingProperty(SaveAsDraftDTO request)
+        {
+            // First run draft validations
+            var draftValidation = ValidateDraftPropertyInput(request);
+            if (!draftValidation.IsValid)
+                return draftValidation;
+
+            // Additional required fields for pending/publish
+            if (string.IsNullOrWhiteSpace(request.Description))
+                return new ValidationResult(false, "Description is required to submit for review");
+            if (string.IsNullOrWhiteSpace(request.Street))
+                return new ValidationResult(false, "Street address is required to submit for review");
+            if (string.IsNullOrWhiteSpace(request.State))
+                return new ValidationResult(false, "State is required to submit for review");
+            if (string.IsNullOrWhiteSpace(request.Country))
+                return new ValidationResult(false, "Country is required to submit for review");
+            if (!Enum.IsDefined(typeof(PropertyType), request.PropertyType))
+                return new ValidationResult(false, "Valid property type is required to submit for review");
+            if (!Enum.IsDefined(typeof(ListingType), request.ListingType))
+                return new ValidationResult(false, "Valid listing type is required to submit for review");
+            //if (request.SquareFeet <= 0)
+            //    return new ValidationResult(false, "Square feet is required to submit for review");
+            //if (request.Latitude == null || request.Longitude == null)
+            //    return new ValidationResult(false, "Location coordinates are required to submit for review");
+
+            return new ValidationResult(true);
         }
 
         private PropertyDTO MapToDTO(Property doc)
